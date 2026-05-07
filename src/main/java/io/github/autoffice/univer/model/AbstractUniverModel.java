@@ -15,9 +15,17 @@ public abstract class AbstractUniverModel {
     @JsonIgnore
     private final Map<String, Object> extras = new LinkedHashMap<>();
 
+    /**
+     * 获取承接未知字段的 extras 映射，供 Jackson 序列化时平铺输出。
+     * Return the extras map that captures unknown fields; Jackson flattens it during serialization.
+     */
     @JsonAnyGetter
     public Map<String, Object> getExtras() { return extras; }
 
+    /**
+     * 反序列化时回收未识别字段到 extras，避免版本升级丢失数据。
+     * Collect unrecognized fields into extras during deserialization to preserve forward compatibility.
+     */
     @JsonAnySetter
     public void putExtra(String key, Object value) { extras.put(key, value); }
 

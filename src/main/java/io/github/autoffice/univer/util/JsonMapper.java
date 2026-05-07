@@ -17,5 +17,9 @@ public final class JsonMapper {
 
     private JsonMapper() {}
 
+    /**
+     * 获取库内共享的 ObjectMapper 实例。
+     * Return the shared ObjectMapper instance used across the library.
+     */
     public static ObjectMapper get() { return MAPPER; }
 }
