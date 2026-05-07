@@ -1,10 +1,12 @@
 package io.github.autoffice.univer;
 
 import io.github.autoffice.univer.model.IWorkbookData;
+import io.github.autoffice.univer.model.IWorksheetData;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -12,15 +14,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class UniverXlsxApiTest {
 
     @Test
-    void should_expose_read_facade_and_throw_not_implemented() {
-        assertThatThrownBy(() -> UniverXlsx.read(new ByteArrayInputStream(new byte[0])))
+    void should_throw_read_exception_on_invalid_input() {
+        assertThatThrownBy(() -> UniverXlsx.read(new ByteArrayInputStream(new byte[]{1, 2, 3})))
                 .isInstanceOf(UniverXlsxReadException.class);
     }
 
     @Test
-    void should_expose_write_facade_and_throw_not_implemented() {
-        assertThatThrownBy(() -> UniverXlsx.write(new IWorkbookData(), new ByteArrayOutputStream()))
-                .isInstanceOf(UniverXlsxWriteException.class);
+    void should_write_empty_workbook_without_error() throws Exception {
+        IWorkbookData empty = new IWorkbookData();
+        empty.getSheets().put("s1", new IWorksheetData().setId("s1").setName("Sheet1"));
+        empty.setSheetOrder(Collections.singletonList("s1"));
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        UniverXlsx.write(empty, out);
+        assertThat(out.size()).isGreaterThan(0);
     }
 
     @Test
