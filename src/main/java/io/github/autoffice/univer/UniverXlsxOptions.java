@@ -1,0 +1,36 @@
+package io.github.autoffice.univer;
+
+import lombok.Builder;
+import lombok.Getter;
+
+/**
+ * 读写选项。
+ * Reader/writer options.
+ */
+@Getter
+@Builder(toBuilder = true)
+public class UniverXlsxOptions {
+    /** 严格模式：遇到不支持特性时抛异常。/ Strict mode: throw on unsupported features. */
+    @Builder.Default
+    private boolean strictMode = false;
+
+    /** 是否写入边车元数据。/ Whether to write the sidecar metadata part. */
+    @Builder.Default
+    private boolean writeSidecar = true;
+
+    /** 是否美化 JSON。/ Pretty-print sidecar json. */
+    @Builder.Default
+    private boolean prettyJson = false;
+
+    /** 缺省 locale（无边车时使用）。/ Fallback locale when sidecar missing. */
+    @Builder.Default
+    private String locale = "enUS";
+
+    /**
+     * 获取默认配置。
+     * Get default options instance.
+     */
+    public static UniverXlsxOptions defaults() {
+        return UniverXlsxOptions.builder().build();
+    }
+}
