@@ -4,3 +4,6 @@ target/
 *.iml
 .vscode/
 .DS_Store
+example/backend/target/
+example/frontend/node_modules/
+example/frontend/dist/
