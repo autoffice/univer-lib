@@ -123,3 +123,64 @@ Line coverage: ~47% (POI surface is large; the main conversion paths are well co
 ## License
 
 Apache 2.0
+
+## Demo / 示例
+
+仓库内提供了端到端 demo（`example/`），用 Spring Boot 3 后端 + Vue 3 前端演示库的实际用法：
+用 Univer Sheets 作为前端编辑器，后端通过 `UniverXlsx` 完成 xlsx 与 `IWorkbookData` 的双向转换。
+
+A full end-to-end demo lives under `example/` (Spring Boot 3 backend + Vue 3 frontend) showing real usage:
+Univer Sheets as the in-browser editor, backend uses `UniverXlsx` for bidirectional xlsx ↔ `IWorkbookData` conversion.
+
+```
+example/
+├── backend/    # Spring Boot 3.3.4 + JDK 17，提供 /api/import 与 /api/export
+└── frontend/   # Vue 3 + Vite + TS，集成 @univerjs/presets
+```
+
+### 接口 / Endpoints
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/import` | multipart/form-data，字段 `file=<xlsx>`，返回 `IWorkbookData` JSON |
+| `POST` | `/api/export?name=<filename>` | 请求体为 `IWorkbookData` JSON，返回 xlsx 二进制流 |
+
+后端使用 `JsonMapper.get()`（库提供，已注册 `IntegerKeyDeserializer`）解析 `cellData` 中的数字字符串键，绕过 Spring 默认 `ObjectMapper`。
+
+### 启动 / Run
+
+前置：JDK 8+（库构建）、JDK 17（运行 Spring Boot 3 后端）、Node 18+。
+
+```bash
+# 1. 把 univer-lib 装到本地 Maven 仓库（首次需要）
+./mvnw install -DskipTests
+
+# 2. 启动后端（默认 http://localhost:8080）
+cd example/backend
+JAVA_HOME=$(/usr/libexec/java_home -v 17) ../../mvnw spring-boot:run
+
+# 3. 启动前端（默认 http://localhost:5173）
+cd example/frontend
+npm install
+npm run dev
+```
+
+Vite 已配置把 `/api` 代理到 `localhost:8080`，无需关心跨域；Spring 后端也显式开启了 CORS 允许 `localhost:5173/3000`。
+
+### 数据流 / Data flow
+
+```
+浏览器选 xlsx ──POST /api/import──▶ 后端 UniverXlsx.read() ──▶ IWorkbookData JSON
+                                                              │
+                                            univerAPI.createWorkbook(json)
+                                                              ▼
+                                                    Univer Sheets 渲染
+                                                              │
+                                            fWorkbook.save() (用户修改后)
+                                                              ▼
+浏览器下载 xlsx ◀──返回 xlsx 字节──── 后端 UniverXlsx.write() ◀── POST /api/export
+```
+
+详细启动步骤、curl 冒烟示例、架构图见 [`example/README.md`](example/README.md)。
+
+For full setup, curl smoke tests and architecture diagrams, see [`example/README.md`](example/README.md).
