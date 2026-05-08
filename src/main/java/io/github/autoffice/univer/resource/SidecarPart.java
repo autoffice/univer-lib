@@ -1,6 +1,7 @@
 package io.github.autoffice.univer.resource;
 
 import com.fasterxml.jackson.databind.ObjectWriter;
+import io.github.autoffice.univer.UniverXlsxWriteException;
 import io.github.autoffice.univer.model.IWorkbookData;
 import io.github.autoffice.univer.util.JsonMapper;
 import org.apache.poi.openxml4j.opc.OPCPackage;
@@ -48,7 +49,7 @@ public final class SidecarPart {
     }
 
     /** 将 IWorkbookData 写入 OPC 包的边车分区。/ Write IWorkbookData to sidecar part in OPC package. */
-    public static void write(OPCPackage pkg, IWorkbookData wb, boolean pretty) {
+    public static void write(OPCPackage pkg, IWorkbookData wb, boolean pretty) throws UniverXlsxWriteException {
         try {
             PackagePartName partName = PackagingURIHelper.createPartName(PART_NAME);
             // 覆盖时先删除旧分区再重建，避免 POI 输出流未截断旧内容
@@ -64,7 +65,7 @@ public final class SidecarPart {
                 writer.writeValue(os, wb);
             }
         } catch (Exception e) {
-            throw new RuntimeException("Failed to write sidecar part", e);
+            throw new UniverXlsxWriteException("Failed to write sidecar part: " + e.getMessage(), e);
         }
     }
 }

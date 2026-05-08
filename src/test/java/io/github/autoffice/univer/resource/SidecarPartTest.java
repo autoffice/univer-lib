@@ -1,5 +1,6 @@
 package io.github.autoffice.univer.resource;
 
+import io.github.autoffice.univer.UniverXlsxWriteException;
 import io.github.autoffice.univer.model.IWorkbookData;
 import io.github.autoffice.univer.model.IWorksheetData;
 import org.apache.poi.openxml4j.opc.OPCPackage;
@@ -12,6 +13,7 @@ import java.util.Collections;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SidecarPartTest {
 
@@ -77,5 +79,14 @@ class SidecarPartTest {
             assertThat(read).isPresent();
             assertThat(read.get().getId()).isEqualTo("v2");
         }
+    }
+
+    @Test
+    void should_throw_UniverXlsxWriteException_on_write_failure() {
+        // 传入 null 包以触发 NPE，验证异常被正确包装为 UniverXlsxWriteException。
+        // Passing a null package triggers NPE, verifying wrapping into UniverXlsxWriteException.
+        assertThatThrownBy(() -> SidecarPart.write(null, new IWorkbookData().setId("x"), false))
+                .isInstanceOf(UniverXlsxWriteException.class)
+                .hasMessageContaining("sidecar");
     }
 }
