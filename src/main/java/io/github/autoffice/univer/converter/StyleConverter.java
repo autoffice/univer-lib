@@ -24,6 +24,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -36,6 +37,10 @@ public final class StyleConverter {
     private final XSSFWorkbook wb;
     /** 写路径样式缓存，键为 styleIdOf / write-path cache keyed by styleIdOf. */
     private final Map<String, XSSFCellStyle> cache = new HashMap<>();
+    /** quotePrefix 变体缓存，键为 styleIdOf+"#qp" / cache for quote-prefix style variants. */
+    private final Map<String, XSSFCellStyle> quotePrefixCache = new HashMap<>();
+    /** 读路径样式去重注册表：styleIdOf → IStyleData / registry of styles observed via styleIdOf. */
+    private final Map<String, IStyleData> idToStyle = new LinkedHashMap<>();
 
     public StyleConverter(XSSFWorkbook wb) {
         this.wb = wb;
@@ -94,18 +99,51 @@ public final class StyleConverter {
      * Generate a stable 16-hex-char id for IStyleData (SHA-256 prefix).
      */
     public String styleIdOf(IStyleData s) {
+        IStyleData src = s == null ? new IStyleData() : s;
         try {
-            String json = JsonMapper.get().writeValueAsString(s == null ? new IStyleData() : s);
+            String json = JsonMapper.get().writeValueAsString(src);
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(json.getBytes(StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder(16);
             for (int i = 0; i < 8; i++) {
                 sb.append(String.format("%02x", hash[i] & 0xFF));
             }
-            return sb.toString();
+            String id = sb.toString();
+            // 登记到读路径注册表，便于 WorkbookConverter 回填 IWorkbookData.styles
+            // Register into read-path registry so WorkbookConverter can populate IWorkbookData.styles.
+            idToStyle.putIfAbsent(id, src);
+            return id;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to hash style: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 返回读路径累计的 styleId → IStyleData 注册表（插入顺序）。
+     * Return the registry of observed styles in insertion order.
+     */
+    public Map<String, IStyleData> getStyleRegistry() {
+        return idToStyle;
+    }
+
+    /**
+     * IStyleData → XSSFCellStyle，附带 quotePrefix=true，结果缓存。
+     * FORCE_TEXT cells share a single quote-prefix variant per base style to
+     * avoid blowing up the workbook's 64K style limit.
+     */
+    public XSSFCellStyle toPoiStyleWithQuotePrefix(IStyleData s) {
+        IStyleData src = s == null ? new IStyleData() : s;
+        String key = styleIdOf(src) + "#qp";
+        XSSFCellStyle cached = quotePrefixCache.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        XSSFCellStyle base = toPoiStyle(src);
+        XSSFCellStyle cloned = wb.createCellStyle();
+        cloned.cloneStyleFrom(base);
+        cloned.setQuotePrefixed(true);
+        quotePrefixCache.put(key, cloned);
+        return cloned;
     }
 
     // ============================================================

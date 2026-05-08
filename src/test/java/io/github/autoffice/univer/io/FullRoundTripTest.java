@@ -100,9 +100,29 @@ class FullRoundTripTest {
         IWorkbookData back = roundtrip(src);
 
         assertThat(back.getSheetOrder()).containsExactly("s3", "s1", "s2");
+        // 严格检查：sheets 键仅包含 sidecar id，无重复影子项 / Only sidecar ids, no shadow name entries.
+        assertThat(back.getSheets().keySet()).containsExactlyInAnyOrder("s1", "s2", "s3");
         assertThat(back.getSheets().get("s2").getHidden()).isEqualTo(BooleanNumber.TRUE);
         assertThat(back.getSheets().get("s1").getHidden()).isNotEqualTo(BooleanNumber.TRUE);
         assertThat(back.getSheets().get("s3").getHidden()).isNotEqualTo(BooleanNumber.TRUE);
+    }
+
+    // ============================================================
+    // 1b. sheet id preserved across roundtrip
+    // ============================================================
+
+    @Test
+    void should_preserve_sheet_id_across_roundtrip() throws Exception {
+        IWorkbookData src = new IWorkbookData().setId("wb").setAppVersion("0.10.2");
+        IWorksheetData ws = newSheetWithCell("s1", "Visible", "x");
+        src.getSheets().put("s1", ws);
+        src.setSheetOrder(Collections.singletonList("s1"));
+
+        IWorkbookData back = roundtrip(src);
+
+        assertThat(back.getSheets()).hasSize(1);
+        assertThat(back.getSheets()).containsOnlyKeys("s1");
+        assertThat(back.getSheets().get("s1").getName()).isEqualTo("Visible");
     }
 
     // ============================================================
@@ -375,6 +395,54 @@ class FullRoundTripTest {
         assertThat(a1).isNotNull();
         assertThat(a1.getV()).isEqualTo("hello");
         assertThat(data.getLocale()).isEqualTo("enUS");
+    }
+
+    // ============================================================
+    // 9b. external xlsx populates styles map
+    // ============================================================
+
+    @Test
+    void should_populate_styles_map_when_reading_external_xlsx() throws Exception {
+        byte[] bytes;
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet sheet = wb.createSheet("Styled");
+            org.apache.poi.xssf.usermodel.XSSFCellStyle s1 = wb.createCellStyle();
+            org.apache.poi.xssf.usermodel.XSSFFont f1 = wb.createFont();
+            f1.setFontName("Arial");
+            f1.setFontHeightInPoints((short) 14);
+            s1.setFont(f1);
+
+            org.apache.poi.xssf.usermodel.XSSFCellStyle s2 = wb.createCellStyle();
+            org.apache.poi.xssf.usermodel.XSSFFont f2 = wb.createFont();
+            f2.setFontName("Courier New");
+            f2.setFontHeightInPoints((short) 10);
+            f2.setBold(true);
+            s2.setFont(f2);
+
+            org.apache.poi.xssf.usermodel.XSSFRow row = sheet.createRow(0);
+            org.apache.poi.xssf.usermodel.XSSFCell c1 = row.createCell(0);
+            c1.setCellValue("x");
+            c1.setCellStyle(s1);
+            org.apache.poi.xssf.usermodel.XSSFCell c2 = row.createCell(1);
+            c2.setCellValue("y");
+            c2.setCellStyle(s2);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            wb.write(out);
+            bytes = out.toByteArray();
+        }
+
+        IWorkbookData data = UniverXlsx.read(new ByteArrayInputStream(bytes));
+
+        assertThat(data.getStyles()).isNotNull();
+        assertThat(data.getStyles()).isNotEmpty();
+        IWorksheetData ws = data.getSheets().get("Styled");
+        ICellData a1 = ws.getCellData().get(0).get(0);
+        ICellData b1 = ws.getCellData().get(0).get(1);
+        assertThat(a1.getS()).isInstanceOf(String.class);
+        assertThat(b1.getS()).isInstanceOf(String.class);
+        assertThat(data.getStyles()).containsKey((String) a1.getS());
+        assertThat(data.getStyles()).containsKey((String) b1.getS());
     }
 
     // ============================================================

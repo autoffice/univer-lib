@@ -78,11 +78,22 @@ public final class WorkbookConverter {
         SharedFormulaRegistry sfr = new SharedFormulaRegistry();
         WorksheetConverter wsc = new WorksheetConverter(wb, sc, cc, rc, sfr, opts);
 
+        // 构建 sidecar 工作表名到 id 的反向索引，解决 xlsx 按名、sidecar 按 id 存储的错配
+        // Build name → id map from sidecar baseline so xlsx-by-name lookups hit sidecar entries.
+        Map<String, String> nameToId = new LinkedHashMap<>();
+        for (Map.Entry<String, IWorksheetData> e : out.getSheets().entrySet()) {
+            IWorksheetData v = e.getValue();
+            if (v != null && v.getName() != null) {
+                nameToId.put(v.getName(), e.getKey());
+            }
+        }
+
         List<String> order = new ArrayList<>();
         for (int i = 0; i < wb.getNumberOfSheets(); i++) {
             XSSFSheet sheet = wb.getSheetAt(i);
+            String sheetName = sheet.getSheetName();
+            String sid = nameToId.getOrDefault(sheetName, sheetName);
             IWorksheetData ws = wsc.readSheet(sheet);
-            String sid = ws.getId() != null ? ws.getId() : sheet.getSheetName();
             ws.setId(sid);
             if (wb.getSheetVisibility(i) == SheetVisibility.HIDDEN) {
                 ws.setHidden(BooleanNumber.TRUE);
@@ -102,6 +113,14 @@ public final class WorkbookConverter {
         }
         if (out.getLocale() == null) {
             out.setLocale(opts.getLocale());
+        }
+        // 回填 styles：cell.s 用字符串 id 引用，需补齐映射表以便消费方解析
+        // Populate styles: cell.s references style id strings, so ensure the map has those keys.
+        Map<String, IStyleData> observed = sc.getStyleRegistry();
+        if (!observed.isEmpty()) {
+            for (Map.Entry<String, IStyleData> e : observed.entrySet()) {
+                out.getStyles().putIfAbsent(e.getKey(), e.getValue());
+            }
         }
         return out;
     }
@@ -131,7 +150,7 @@ public final class WorkbookConverter {
     /** 合并：xlsx 读出的 ws 覆盖 sidecar 中可由 xlsx 推断的字段。/ Merge: xlsx-derived overrides sidecar for content fields. */
     private void mergeSheetData(IWorksheetData baseline, IWorksheetData fromXlsx) {
         if (fromXlsx.getCellData() != null && !fromXlsx.getCellData().isEmpty()) {
-            baseline.setCellData(fromXlsx.getCellData());
+            mergeCellData(baseline, fromXlsx);
         }
         if (fromXlsx.getMergeData() != null && !fromXlsx.getMergeData().isEmpty()) {
             baseline.setMergeData(fromXlsx.getMergeData());
@@ -165,6 +184,44 @@ public final class WorkbookConverter {
         }
         if (baseline.getDefaultRowHeight() == null) {
             baseline.setDefaultRowHeight(fromXlsx.getDefaultRowHeight());
+        }
+    }
+
+    /**
+     * 逐单元格合并：xlsx 覆盖值/类型/公式/样式，保留 sidecar 独有字段（富文本 p、自定义 custom）。
+     * Cell-level merge: xlsx overrides value/type/formula/style, but sidecar-only
+     * fields (rich text {@code p}, {@code custom}) are preserved when xlsx has no replacement.
+     */
+    private void mergeCellData(IWorksheetData baseline, IWorksheetData fromXlsx) {
+        if (baseline.getCellData() == null) {
+            baseline.setCellData(new LinkedHashMap<>());
+        }
+        Map<Integer, Map<Integer, ICellData>> base = baseline.getCellData();
+        for (Map.Entry<Integer, Map<Integer, ICellData>> rowE : fromXlsx.getCellData().entrySet()) {
+            Integer rowIdx = rowE.getKey();
+            Map<Integer, ICellData> baseRow = base.computeIfAbsent(rowIdx, k -> new LinkedHashMap<>());
+            for (Map.Entry<Integer, ICellData> colE : rowE.getValue().entrySet()) {
+                Integer colIdx = colE.getKey();
+                ICellData xc = colE.getValue();
+                if (xc == null) {
+                    continue;
+                }
+                ICellData bc = baseRow.get(colIdx);
+                if (bc == null) {
+                    baseRow.put(colIdx, xc);
+                    continue;
+                }
+                // 覆盖 xlsx 可推断字段 / override fields derivable from xlsx
+                bc.setV(xc.getV());
+                bc.setT(xc.getT());
+                bc.setF(xc.getF());
+                bc.setSi(xc.getSi());
+                if (xc.getS() != null) {
+                    bc.setS(xc.getS());
+                }
+                // 保留 baseline.p（富文本）与 baseline.custom：xlsx 无法完整表达，sidecar 值继续生效
+                // Preserve baseline.p and baseline.custom: xlsx can't fully express; sidecar wins.
+            }
         }
     }
 }
