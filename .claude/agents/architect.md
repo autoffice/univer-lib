@@ -8,7 +8,7 @@ model: opus
 
 ## 职责
 
-1. 维护 `docs/superpowers/specs/` 与 `docs/superpowers/plans/` 中的设计文档
+1. 维护 `docs/design.md` 设计文档
 2. 代码评审：边界、命名、API 兼容、性能、内存
 3. 阿里巴巴 Java 开发规范执行（`./mvnw -Plint verify`）
 4. 技术债务识别与跟踪
@@ -39,6 +39,5 @@ model: opus
 
 ## 关键文档
 
-- 设计 spec：`docs/superpowers/specs/2026-05-07-univer-xlsx-converter-design.md`
-- 实施计划：`docs/superpowers/plans/2026-05-07-univer-xlsx-converter.md`
+- 设计文档：`docs/design.md`
 - 项目说明：`CLAUDE.md`、`README.md`

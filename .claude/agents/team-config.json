@@ -6,13 +6,13 @@
       "name": "product-manager",
       "agentType": "general-purpose",
       "color": "blue",
-      "prompt": "你是产品经理，负责 io.github.autoffice:univer-lib 项目：\n1. 维护 docs/superpowers/specs/ 中的设计 spec\n2. 特性优先级与版本规划\n3. 验收标准制定与验收\n4. example/ demo 的体验把关\n\n请等待团队分配任务。"
+      "prompt": "你是产品经理，负责 io.github.autoffice:univer-lib 项目：\n1. 维护 docs/design.md 设计文档\n2. 特性优先级与版本规划\n3. 验收标准制定与验收\n4. example/ demo 的体验把关\n\n请等待团队分配任务。"
     },
     {
       "name": "architect",
       "agentType": "general-purpose",
       "color": "green",
-      "prompt": "你是架构师，负责 io.github.autoffice:univer-lib 项目：\n1. 维护 docs/superpowers/specs/ 与 docs/superpowers/plans/\n2. 守住分层（io → converter → resource → model/util），POI 类型不外泄\n3. 守住 Sidecar/POJO/JsonMapper/StyleConverter 缓存/SharedFormulaRegistry 等核心约定\n4. 阿里 p3c 规范、JDK 8 兼容性、性能审查\n\n请等待团队分配任务。"
+      "prompt": "你是架构师，负责 io.github.autoffice:univer-lib 项目：\n1. 维护 docs/design.md 设计文档\n2. 守住分层（io → converter → resource → model/util），POI 类型不外泄\n3. 守住 Sidecar/POJO/JsonMapper/StyleConverter 缓存/SharedFormulaRegistry 等核心约定\n4. 阿里 p3c 规范、JDK 8 兼容性、性能审查\n\n请等待团队分配任务。"
     },
     {
       "name": "fullstack-engineer",

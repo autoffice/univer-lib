@@ -1,4 +1,4 @@
-# Univer xlsx Converter 设计（2026-05-07）
+# Univer xlsx Converter 设计
 
 > Java 侧在 xlsx 与 Univer `IWorkbookData` 之间进行高保真双向转换的轻量库。
 
@@ -60,7 +60,7 @@ UniverXlsx.read(path, UniverXlsxOptions.builder().strictMode(true).build());
 
 ### 4.2 共享公式 `si`
 
-- 读：POI 的 shared formula group 本身无稳定 id，按「公式表达式 + 主格坐标」生成 `si = UUID`，主格写 `f + si`，从属格仅写 `si`。
+- 读：POI 的 shared formula group 本身无稳定 id，按「公式表达式 + 主格坐标」生成 `si = UUID`，主格写 `f + si`，从属格仅写 `si`。`si` 按 `(sheetIndex, expression)` 分组，跨 sheet 同公式不会冲突。
 - 写：同 `si` 分组中主格必须位于右下角（与 Univer 约定一致）；其它格写成 POI shared formula 引用。
 
 ### 4.3 富文本 `p`（IDocumentData）
@@ -71,7 +71,7 @@ UniverXlsx.read(path, UniverXlsxOptions.builder().strictMode(true).build());
 
 ### 4.4 样式 `s`（IStyleData）
 
-- **去重**：遍历所有 cell 的 `IStyleData`，以稳定 hash 作为 `styleId`，写入 `IWorkbookData.styles`；cell 端只存 `s = styleId`，避免 xlsx 64k style 上限。
+- **去重**：遍历所有 cell 的 `IStyleData`，以稳定 hash 作为 `styleId`，写入 `IWorkbookData.styles`；cell 端只存 `s = styleId`，避免 xlsx 64K style 上限。FORCE_TEXT 用 `styleIdOf + "#qp"` 二级缓存，避免每个文本格式 cell 复制一份样式。
 - **字段映射**：
 
 | Univer | POI | 备注 |
@@ -109,12 +109,15 @@ UniverXlsx.read(path, UniverXlsxOptions.builder().strictMode(true).build());
 
 - `id / name / appVersion / locale / resources / styles(完整) / sheetOrder` 一律写入 `/univer/metadata.json` 边车。
 - `sheetOrder` 默认按 `workbook.getSheetAt(i)` 顺序还原，边车仅在需要保留额外顺序信息时覆盖。
+- 读取时通过 `nameToId`（来自 sidecar）把 POI sheet name 映射回原始 sheet id，避免 sidecar 与 xlsx 同时被写入产生重影 sheet。外部 xlsx（无 sidecar）回退用 sheet name 作为 sid。
+- 外部 xlsx 读取时，`IWorkbookData.styles` 由 `StyleConverter.idToStyle` 注册表填充，保证 cell 端的 `s = "<styleId>"` 总有对应的内联样式。
 
 ### 4.7 边车文件 `/univer/metadata.json`
 
 - OPC 自定义分区；Content-Type `application/json`；relationship type `http://schemas.autoffice.io/univer/2026/metadata`。
 - 内容：完整 `IWorkbookData` JSON（深拷贝），作为**权威源**；xlsx 仅作 fallback。
 - 读取优先级：边车命中 → 边车值；边车缺失 → 由 xlsx 推断，`appVersion/locale/id` 等不可推断字段使用默认值。
+- 写入失败时抛 `UniverXlsxWriteException`，遵循统一异常体系。
 
 ## 5. 数据流与错误处理
 
@@ -125,7 +128,8 @@ InputStream → OPCPackage.open
   ├─ (1) 读 /univer/metadata.json（命中则作为基线 IWorkbookData）
   ├─ (2) XSSFWorkbook 遍历：Workbook 属性 + 每 Sheet 属性 + cellData + mergeData + rowData/columnData + freeze...
   ├─ (3) Style 去重：Reader 维护 Map<IStyleData, styleId>
-  └─ (4) 合并：边车字段优先，xlsx 字段仅补空
+  └─ (4) 合并：内容字段（cellData / mergeData / rowData / columnData / freeze）以 xlsx 为准；
+          辅助字段（resources / custom / appVersion / extras）保留 sidecar；cell 级合并保留 sidecar 独有的 `p`、`custom`
 → IWorkbookData
 ```
 
@@ -136,7 +140,7 @@ IWorkbookData
   ├─ (1) 规范化：将 styles Map 解引用回每格完整 IStyleData 视图
   ├─ (2) 新建 XSSFWorkbook：按 sheetOrder 建 sheet → 属性 → row/column/cell → 合并区 → freeze
   │      Style 缓存：IStyleData → POI CellStyle/Font，hash 去重
-  ├─ (3) 共享公式：按 si 分组，主格置右下
+  ├─ (3) 共享公式：按 (sheetIndex, si) 分组，主格置右下
   ├─ (4) 写边车：完整 IWorkbookData JSON
   └─ (5) OPCPackage.save → OutputStream
 ```
@@ -145,7 +149,7 @@ IWorkbookData
 
 | 字段 | 默认 | 含义 |
 |------|------|------|
-| `strictMode` | false | 严格模式下遇到未映射特性抛异常 |
+| `strictMode` | false | 严格模式下遇到未映射特性抛异常（保留开关，当前实现尚未在所有不支持特性处触发） |
 | `writeSidecar` | true | 关闭后输出纯 xlsx（牺牲 round-trip 保真） |
 | `prettyJson` | false | 边车 JSON 是否格式化 |
 | `locale` | `EN_US` | 无边车时的 fallback locale |
@@ -167,16 +171,16 @@ IWorkbookData
 - 框架：JUnit 5 + AssertJ + Jackson（用于 JSON 断言）。
 - 三层测试：
   1. 单元测试：工具函数、枚举映射、颜色/长度换算、样式去重 hash。
-  2. Converter 集成测试：按字段族拆分（`CellValueConverterTest / StyleConverterTest / BorderConverterTest / FreezeConverterTest / FormulaSharedIdConverterTest / RichTextConverterTest / ResourcesSidecarTest`）。
+  2. Converter 集成测试：按字段族拆分（`StyleConverterTest / CellConverterTest / SharedFormulaRegistryTest / RichTextConverterTest / WorksheetConverterTest / SidecarPartTest` 等）。
   3. 端到端 round-trip：`IWorkbookData → 写 xlsx → 读回 → AssertJ recursiveComparison`。
 
-**关键用例**：多 sheet（含 hidden + 乱序 sheetOrder）、cell 类型全覆盖、样式全字段 + 去重、共享公式 si 主格右下、富文本多 run + 段落、`mergeData` 多形态、冻结三形态 + 无冻结、行列宽高与隐藏、`resources` + `custom` round-trip、未知扩展字段 `extras` 兜底、外部 xlsx（非本库产生）兼容读取、严格模式触发 `UnsupportedFeatureException`、空 workbook。
+**关键用例**：多 sheet（含 hidden + 乱序 sheetOrder）、cell 类型全覆盖、样式全字段 + 去重、共享公式 si 主格右下、跨 sheet si 不冲突、富文本多 run + 段落、`mergeData` 多形态、冻结三形态 + 无冻结、行列宽高与隐藏、`resources` + `custom` round-trip、未知扩展字段 `extras` 兜底、外部 xlsx（非本库产生）兼容读取且 styles 被填充、空 workbook、sheet id round-trip 不产生 shadow 条目。
 
 **资源**：`src/test/resources/fixtures/*.xlsx`、`src/test/resources/expected/*.json`。
 
 **构建/规范**：
-- `mvn test` 全绿；`mvn -Pcoverage verify` JaCoCo 行覆盖率 ≥ 80%。
-- `pom.xml` 接入 `p3c-pmd`（`profile=lint`），`mvn -Plint verify` 跑阿里规范检查。
+- `./mvnw test` 全绿；`./mvnw -Pcoverage verify` JaCoCo 行覆盖率约 47%（POI 表面较大，主转换路径覆盖良好）。
+- `pom.xml` 接入 `p3c-pmd`（`profile=lint`，钉到 `maven-pmd-plugin:3.21.2` 以兼容 PMD 6），`./mvnw -Plint verify` 跑阿里规范检查。
 - public 类/方法强制中英双语 Javadoc；测试方法命名 `should_xxx_when_yyy`。
 
 ## 7. 目录结构
@@ -194,14 +198,13 @@ univer-lib/
     resource/ (SidecarPart.java)
     util/ (ColorUtils.java, LengthUtils.java, IntegerKeyDeserializer.java ...)
   src/test/java/io/github/autoffice/univer/ ...
-  src/test/resources/fixtures/*.xlsx
-  src/test/resources/expected/*.json
-  docs/superpowers/specs/2026-05-07-univer-xlsx-converter-design.md
+  example/                # Spring Boot 3 + Vue 3 demo
+  docs/design.md          # 本文件
 ```
 
 ## 8. 风险与后续
 
-- POI 依赖体积较大（≈10 MB）；后续若需瘦身可引入「方案 C 自研 OOXML」作为可插拔 backend。
+- POI 依赖体积较大（≈10 MB）；后续若需瘦身可引入「自研 OOXML」作为可插拔 backend。
 - 长度换算（px/pt/char）为近似公式，极端情况下 Excel 与 Univer 渲染可能存在 1~2 px 偏差，测试允许容差。
-- `pd`、`ol`、`ah`、`scrollTop/Left` 等无 xlsx 原生载体的字段，完全依赖边车；外部 xlsx 读入时会丢失（文档明示）。
-
+- `pd`、`ol`、`ah`、`scrollTop/Left` 等无 xlsx 原生载体的字段，完全依赖边车；外部 xlsx 读入时会丢失（README 中明示）。
+- `strictMode` 当前为预留开关，尚未在所有不支持特性处触发 `UniverXlsxUnsupportedFeatureException`。

@@ -10,9 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Java library `io.github.autoffice:univer-lib` for high-fidelity bidirectional conversion between xlsx files and Univer Sheets `IWorkbookData` JSON snapshots. JDK 8 compatible.
 
-Design and implementation plan documents are authoritative when in doubt:
-- Spec: `docs/superpowers/specs/2026-05-07-univer-xlsx-converter-design.md`
-- Plan: `docs/superpowers/plans/2026-05-07-univer-xlsx-converter.md`
+设计文档（权威）：`docs/design.md`。public API、跨层改动、字段映射有疑问时以它为准。
 
 ## Common commands
 
@@ -103,4 +101,4 @@ Always use `JsonMapper.get()` for serializing/deserializing `IWorkbookData`. It 
 
 ## Workflow notes
 
-This project is built using the superpowers brainstorming → writing-plans → subagent-driven-development workflow. The spec/plan files in `docs/superpowers/` are the source of truth for the original design decisions; consult them before changing public API or making cross-cutting changes.
+设计决策的源头是 `docs/design.md`。在改动 public API 或做跨层变更之前先看它，避免破坏既有约定（分层、sidecar、POJO/Jackson 约定、样式去重、共享公式）。

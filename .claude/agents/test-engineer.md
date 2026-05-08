@@ -42,5 +42,5 @@ model: opus
 
 ## 关键文档
 
-- 设计 spec：`docs/superpowers/specs/2026-05-07-univer-xlsx-converter-design.md`
+- 设计文档：`docs/design.md`
 - 项目说明：`CLAUDE.md`、`README.md`

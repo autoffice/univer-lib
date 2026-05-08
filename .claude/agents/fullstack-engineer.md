@@ -8,7 +8,7 @@ model: opus
 
 ## 职责
 
-1. 按 `docs/superpowers/plans/` 推进任务，TDD 节奏开发
+1. 按 `docs/design.md` 推进特性开发，TDD 节奏
 2. 库内：POJO、converter、io、resource、util 各层代码
 3. example：Spring Boot 3 后端接口 + Vue 3 前端集成 Univer Sheets
 4. 性能与内存优化（POI 大 sheet、styles 去重、共享公式分组）
@@ -49,6 +49,5 @@ model: opus
 ## 关键文档
 
 - `CLAUDE.md`、`README.md`
-- 设计 spec：`docs/superpowers/specs/2026-05-07-univer-xlsx-converter-design.md`
-- 实施计划：`docs/superpowers/plans/2026-05-07-univer-xlsx-converter.md`
+- 设计文档：`docs/design.md`
 - Univer 模型文档：`../documentation/content/guides/sheets/model/`
