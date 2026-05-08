@@ -250,8 +250,7 @@ public final class WorksheetConverter {
                 .setName(sheet.getSheetName());
 
         readSheetAttrs(sheet, dst);
-        readCellData(sheet, dst);
-        readRowData(sheet, dst);
+        readCellsAndRows(sheet, dst);
         readColumnData(sheet, dst);
         readMergedRegions(sheet, dst);
         readFreeze(sheet, dst);
@@ -278,15 +277,34 @@ public final class WorksheetConverter {
         // zoomRatio: POI 无公开 getZoom，故跳过 / skip zoom read (no public getter)
     }
 
-    /** 读单元格数据 / read cell data. */
-    private void readCellData(XSSFSheet sheet, IWorksheetData dst) {
+    /** 读单元格数据和行数据（合并为单次遍历）/ read cell data and row data in single traversal. */
+    private void readCellsAndRows(XSSFSheet sheet, IWorksheetData dst) {
         int sheetIndex = wb.getSheetIndex(sheet);
+        float defaultH = sheet.getDefaultRowHeightInPoints();
+
         for (org.apache.poi.ss.usermodel.Row row : sheet) {
             if (!(row instanceof XSSFRow)) {
                 continue;
             }
             XSSFRow xRow = (XSSFRow) row;
             int rowIdx = xRow.getRowNum();
+
+            // 收集行元数据（高度、隐藏）/ collect row metadata (height, hidden)
+            float h = xRow.getHeightInPoints();
+            boolean hidden = xRow.getZeroHeight();
+            boolean custom = Math.abs(h - defaultH) > 0.01f;
+            if (custom || hidden) {
+                IRowData rd = new IRowData();
+                if (custom) {
+                    rd.setH(LengthUtils.pointsToPx(h));
+                }
+                if (hidden) {
+                    rd.setHd(BooleanNumber.TRUE);
+                }
+                dst.getRowData().put(rowIdx, rd);
+            }
+
+            // 遍历单元格 / traverse cells
             for (org.apache.poi.ss.usermodel.Cell cell : xRow) {
                 if (!(cell instanceof XSSFCell)) {
                     continue;
@@ -309,71 +327,38 @@ public final class WorksheetConverter {
         }
     }
 
-    /** 读行数据 / read row data (only rows with custom height or hidden). */
-    private void readRowData(XSSFSheet sheet, IWorksheetData dst) {
-        float defaultH = sheet.getDefaultRowHeightInPoints();
-        for (org.apache.poi.ss.usermodel.Row row : sheet) {
-            if (!(row instanceof XSSFRow)) {
-                continue;
-            }
-            XSSFRow xRow = (XSSFRow) row;
-            int rowIdx = xRow.getRowNum();
-            float h = xRow.getHeightInPoints();
-            boolean hidden = xRow.getZeroHeight();
-            boolean custom = Math.abs(h - defaultH) > 0.01f;
-            if (!custom && !hidden) {
-                continue;
-            }
-            IRowData rd = new IRowData();
-            if (custom) {
-                rd.setH(LengthUtils.pointsToPx(h));
-            }
-            if (hidden) {
-                rd.setHd(BooleanNumber.TRUE);
-            }
-            dst.getRowData().put(rowIdx, rd);
-        }
-    }
-
     /** 读列数据 / read column data (only columns with custom width or hidden). */
     private void readColumnData(XSSFSheet sheet, IWorksheetData dst) {
-        int maxCol = 0;
-        for (org.apache.poi.ss.usermodel.Row row : sheet) {
-            short last = row.getLastCellNum();
-            if (last > maxCol) {
-                maxCol = last;
-            }
-        }
-        // 还需考虑无单元格但有列元数据（width/hidden）的列 / also include columns that only have metadata
+        // 直接从 CTCols 读取列元数据，避免遍历所有行 / read column metadata directly from CTCols
         org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCols[] colsArr =
                 sheet.getCTWorksheet().getColsArray();
-        for (org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCols cols : colsArr) {
-            for (org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCol col : cols.getColArray()) {
-                int upper = (int) col.getMax();
-                if (upper > maxCol) {
-                    maxCol = upper;
-                }
-            }
-        }
-        if (maxCol <= 0) {
+        if (colsArr == null || colsArr.length == 0) {
             return;
         }
         int defaultWidth256 = sheet.getDefaultColumnWidth() * 256;
-        for (int i = 0; i < maxCol; i++) {
-            int w = sheet.getColumnWidth(i);
-            boolean hidden = sheet.isColumnHidden(i);
-            boolean customW = w != defaultWidth256;
-            if (!customW && !hidden) {
-                continue;
+        for (org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCols cols : colsArr) {
+            for (org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCol col : cols.getColArray()) {
+                // CTCol 的 min/max 定义了列范围（1-based，需要转为 0-based）
+                // CTCol min/max define column range (1-based, convert to 0-based)
+                int minCol = (int) col.getMin() - 1;
+                int maxCol = (int) col.getMax() - 1;
+                for (int i = minCol; i <= maxCol; i++) {
+                    int w = sheet.getColumnWidth(i);
+                    boolean hidden = sheet.isColumnHidden(i);
+                    boolean customW = w != defaultWidth256;
+                    if (!customW && !hidden) {
+                        continue;
+                    }
+                    IColumnData cd = new IColumnData();
+                    if (customW) {
+                        cd.setW(LengthUtils.charsToPx(w / 256.0));
+                    }
+                    if (hidden) {
+                        cd.setHd(BooleanNumber.TRUE);
+                    }
+                    dst.getColumnData().put(i, cd);
+                }
             }
-            IColumnData cd = new IColumnData();
-            if (customW) {
-                cd.setW(LengthUtils.charsToPx(w / 256.0));
-            }
-            if (hidden) {
-                cd.setHd(BooleanNumber.TRUE);
-            }
-            dst.getColumnData().put(i, cd);
         }
     }
 

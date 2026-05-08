@@ -41,6 +41,8 @@ public final class StyleConverter {
     private final Map<String, XSSFCellStyle> quotePrefixCache = new HashMap<>();
     /** 读路径样式去重注册表：styleIdOf → IStyleData / registry of styles observed via styleIdOf. */
     private final Map<String, IStyleData> idToStyle = new LinkedHashMap<>();
+    /** styleIdOf 计算结果缓存，键为 IStyleData 对象 / cache for styleIdOf computation. */
+    private final Map<IStyleData, String> styleIdCache = new HashMap<>();
 
     public StyleConverter(XSSFWorkbook wb) {
         this.wb = wb;
@@ -100,6 +102,11 @@ public final class StyleConverter {
      */
     public String styleIdOf(IStyleData s) {
         IStyleData src = s == null ? new IStyleData() : s;
+        // 先查缓存，避免重复计算 SHA-256 / check cache first to avoid redundant SHA-256 computation
+        String cached = styleIdCache.get(src);
+        if (cached != null) {
+            return cached;
+        }
         try {
             String json = JsonMapper.get().writeValueAsString(src);
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -112,6 +119,8 @@ public final class StyleConverter {
             // 登记到读路径注册表，便于 WorkbookConverter 回填 IWorkbookData.styles
             // Register into read-path registry so WorkbookConverter can populate IWorkbookData.styles.
             idToStyle.putIfAbsent(id, src);
+            // 缓存计算结果 / cache the computed id
+            styleIdCache.put(src, id);
             return id;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to hash style: " + e.getMessage(), e);
