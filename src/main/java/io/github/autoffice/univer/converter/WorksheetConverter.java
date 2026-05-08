@@ -280,6 +280,7 @@ public final class WorksheetConverter {
 
     /** 读单元格数据 / read cell data. */
     private void readCellData(XSSFSheet sheet, IWorksheetData dst) {
+        int sheetIndex = wb.getSheetIndex(sheet);
         for (org.apache.poi.ss.usermodel.Row row : sheet) {
             if (!(row instanceof XSSFRow)) {
                 continue;
@@ -298,7 +299,7 @@ public final class WorksheetConverter {
                 }
                 // 公式：追加 si / formula: attach si
                 if (xCell.getCellType() == CellType.FORMULA && data.getF() != null) {
-                    String si = formulas.registerRead(rowIdx, colIdx, data.getF());
+                    String si = formulas.registerRead(sheetIndex, rowIdx, colIdx, data.getF());
                     data.setSi(si);
                 }
                 dst.getCellData()

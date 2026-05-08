@@ -29,7 +29,7 @@ import java.util.UUID;
  */
 public final class SharedFormulaRegistry {
 
-    /** 读路径：表达式到 si 的映射 / Read path: expression to si. */
+    /** 读路径：表达式到 si 的映射（按 sheet 索引分桶） / Read path: (sheetIndex, expression) to si. */
     private final Map<String, String> readFormulaToSi = new HashMap<>();
 
     /** 读路径：si 到主单元格坐标的映射 / Read path: si to master [row, col]. */
@@ -53,13 +53,19 @@ public final class SharedFormulaRegistry {
         }
     }
 
+    /** 组合 sheetIndex 与表达式为读路径查询键 / Build the composite read-path key. */
+    private static String readKey(int sheetIndex, String expr) {
+        return sheetIndex + "\t" + expr;
+    }
+
     /** 读路径：登记单元格公式并返回其 si / Read path: register a cell formula and return its si. */
-    public String registerRead(int row, int col, String formula) {
+    public String registerRead(int sheetIndex, int row, int col, String formula) {
         String expr = stripLeadingEquals(formula);
-        String si = readFormulaToSi.get(expr);
+        String key = readKey(sheetIndex, expr);
+        String si = readFormulaToSi.get(key);
         if (si == null) {
             si = UUID.randomUUID().toString();
-            readFormulaToSi.put(expr, si);
+            readFormulaToSi.put(key, si);
             readSiToMasterCoord.put(si, new int[]{row, col});
         } else {
             int[] current = readSiToMasterCoord.get(si);
@@ -71,11 +77,13 @@ public final class SharedFormulaRegistry {
         return si;
     }
 
-    /** 读路径：根据 si 查找主公式表达式 / Read path: lookup the canonical formula expression by si. */
+    /** 读路径：根据 si 查找主公式表达式（跨 sheet 唯一）/ Read path: lookup master formula expression by si. */
     public Optional<String> masterFormulaOf(String si) {
         for (Map.Entry<String, String> e : readFormulaToSi.entrySet()) {
             if (e.getValue().equals(si)) {
-                return Optional.of(e.getKey());
+                String key = e.getKey();
+                int tab = key.indexOf('\t');
+                return Optional.of(tab >= 0 ? key.substring(tab + 1) : key);
             }
         }
         return Optional.empty();

@@ -13,8 +13,8 @@ class SharedFormulaRegistryTest {
     @Test
     void should_group_same_formula_into_one_si() {
         SharedFormulaRegistry r = new SharedFormulaRegistry();
-        String s1 = r.registerRead(0, 0, "A$1+1");
-        String s2 = r.registerRead(0, 1, "A$1+1");
+        String s1 = r.registerRead(0, 0, 0, "A$1+1");
+        String s2 = r.registerRead(0, 0, 1, "A$1+1");
         assertThat(s1).isEqualTo(s2);
         assertThat(r.masterFormulaOf(s1)).contains("A$1+1");
     }
@@ -22,19 +22,30 @@ class SharedFormulaRegistryTest {
     @Test
     void should_assign_different_si_to_different_formulas() {
         SharedFormulaRegistry r = new SharedFormulaRegistry();
-        String s1 = r.registerRead(0, 0, "A$1+1");
-        String s2 = r.registerRead(1, 0, "B$1+1");
+        String s1 = r.registerRead(0, 0, 0, "A$1+1");
+        String s2 = r.registerRead(0, 1, 0, "B$1+1");
         assertThat(s1).isNotEqualTo(s2);
     }
 
     @Test
     void should_pick_bottom_right_as_master_on_read() {
         SharedFormulaRegistry r = new SharedFormulaRegistry();
-        String s1 = r.registerRead(0, 0, "SUM(A1:B1)");
-        r.registerRead(2, 3, "SUM(A1:B1)");
-        r.registerRead(1, 2, "SUM(A1:B1)");
+        String s1 = r.registerRead(0, 0, 0, "SUM(A1:B1)");
+        r.registerRead(0, 2, 3, "SUM(A1:B1)");
+        r.registerRead(0, 1, 2, "SUM(A1:B1)");
         int[] master = r.masterCoordOf(s1);
         assertThat(master).containsExactly(2, 3);
+    }
+
+    @Test
+    void should_not_share_si_across_sheets() {
+        SharedFormulaRegistry r = new SharedFormulaRegistry();
+        String s1 = r.registerRead(0, 0, 0, "SUM(A1:B1)");
+        String s2 = r.registerRead(1, 0, 0, "SUM(A1:B1)");
+        assertThat(s1).isNotEqualTo(s2);
+        // master 坐标各自独立 / Master coord remains per-si.
+        assertThat(r.masterCoordOf(s1)).containsExactly(0, 0);
+        assertThat(r.masterCoordOf(s2)).containsExactly(0, 0);
     }
 
     @Test
