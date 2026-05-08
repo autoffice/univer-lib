@@ -1,5 +1,6 @@
 package io.github.autoffice.example.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.autoffice.univer.UniverXlsx;
 import io.github.autoffice.univer.UniverXlsxException;
@@ -15,6 +16,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 /**
  * xlsx 导入导出 REST 接口。
@@ -34,15 +36,21 @@ public class UniverXlsxController {
         produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> importXlsx(@RequestParam("file") MultipartFile file) throws Exception {
         if (file.isEmpty()) {
-            return ResponseEntity.badRequest().body("{\"error\":\"empty file\"}");
+            return errorJson("empty file");
+        }
+        String filename = file.getOriginalFilename();
+        if (filename == null || !filename.toLowerCase().endsWith(".xlsx")) {
+            return errorJson("only .xlsx files are supported");
         }
         try (InputStream in = file.getInputStream()) {
             IWorkbookData wb = UniverXlsx.read(in);
-            if (wb.getId() == null) wb.setId("imported-" + System.currentTimeMillis());
+            if (wb.getId() == null) {
+                wb.setId("imported-" + System.currentTimeMillis());
+            }
             String json = mapper.writeValueAsString(wb);
             return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(json);
-        } catch (UniverXlsxException e) {
-            return ResponseEntity.badRequest().body("{\"error\":\"" + e.getMessage() + "\"}");
+        } catch (UniverXlsxException | JsonProcessingException e) {
+            return errorJson(e.getMessage());
         }
     }
 
@@ -51,18 +59,32 @@ public class UniverXlsxController {
      * Accept IWorkbookData JSON and return xlsx bytes.
      */
     @PostMapping(value = "/export", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<byte[]> exportXlsx(@RequestBody String body,
-                                              @RequestParam(value = "name", defaultValue = "export") String name) throws Exception {
-        IWorkbookData wb = mapper.readValue(body, IWorkbookData.class);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        UniverXlsx.write(wb, out);
-        byte[] bytes = out.toByteArray();
-        String fileName = URLEncoder.encode(name + ".xlsx", StandardCharsets.UTF_8).replace("+", "%20");
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
-        headers.set(HttpHeaders.CONTENT_DISPOSITION,
-            "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''" + fileName);
-        return ResponseEntity.ok().headers(headers).body(bytes);
+    public ResponseEntity<?> exportXlsx(@RequestBody String body,
+                                        @RequestParam(value = "name", defaultValue = "export") String name)
+            throws Exception {
+        try {
+            IWorkbookData wb = mapper.readValue(body, IWorkbookData.class);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            UniverXlsx.write(wb, out);
+            byte[] bytes = out.toByteArray();
+            String fileName = URLEncoder.encode(name + ".xlsx", StandardCharsets.UTF_8).replace("+", "%20");
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.parseMediaType(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+            headers.set(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"" + fileName + "\"; filename*=UTF-8''" + fileName);
+            return ResponseEntity.ok().headers(headers).body(bytes);
+        } catch (JsonProcessingException e) {
+            return ResponseEntity.badRequest()
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(mapper.writeValueAsString(Map.of("error", e.getMessage())));
+        }
+    }
+
+    /** 构造标准 JSON 错误响应 / Build a standard JSON error response. */
+    private ResponseEntity<String> errorJson(String message) throws JsonProcessingException {
+        return ResponseEntity.badRequest()
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(mapper.writeValueAsString(Map.of("error", message == null ? "unknown error" : message)));
     }
 }
