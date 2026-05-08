@@ -1,11 +1,16 @@
 package io.github.autoffice.univer.converter;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.autoffice.univer.UniverXlsxOptions;
 import io.github.autoffice.univer.model.BooleanNumber;
 import io.github.autoffice.univer.model.ICellData;
 import io.github.autoffice.univer.model.IStyleData;
 import io.github.autoffice.univer.model.IWorkbookData;
 import io.github.autoffice.univer.model.IWorksheetData;
+import io.github.autoffice.univer.util.JsonMapper;
 import org.apache.poi.ss.usermodel.SheetVisibility;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -20,6 +25,10 @@ import java.util.Map;
  * Workbook-level converter between IWorkbookData and XSSFWorkbook.
  */
 public final class WorkbookConverter {
+
+    /** Univer 条件格式插件名 / Univer conditional formatting plugin resource name. */
+    private static final String CF_PLUGIN_NAME = "SHEET_CONDITIONAL_FORMATTING_PLUGIN";
+
     private final UniverXlsxOptions opts;
 
     public WorkbookConverter(UniverXlsxOptions opts) {
@@ -43,6 +52,12 @@ public final class WorkbookConverter {
                 ? src.getSheetOrder()
                 : new ArrayList<>(src.getSheets().keySet());
 
+        // 条件格式：按 sheetId 分桶，写入时回填
+        Map<String, JsonNode> cfBySheetId = extractCfFromResources(src);
+
+        // 建立 sheetId -> 实际写入的 XSSFSheet 映射，便于最终写 CF
+        Map<String, XSSFSheet> sheetIdToXssf = new LinkedHashMap<>();
+
         for (String sid : order) {
             IWorksheetData ws = src.getSheets().get(sid);
             if (ws == null) {
@@ -57,8 +72,19 @@ public final class WorkbookConverter {
             if (ws.getHidden() == BooleanNumber.TRUE) {
                 wb.setSheetVisibility(wb.getSheetIndex(sheet), SheetVisibility.HIDDEN);
             }
+            sheetIdToXssf.put(sid, sheet);
         }
         sfr.applyOnWorkbook(wb);
+
+        // 回写条件格式
+        if (!cfBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : cfBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    ConditionalFormattingConverter.writeSheetCF(sh, e.getValue());
+                }
+            }
+        }
         return wb;
     }
 
@@ -89,6 +115,9 @@ public final class WorkbookConverter {
         }
 
         List<String> order = new ArrayList<>();
+        ObjectMapper mapper = JsonMapper.get();
+        // Univer CF 插件期望按 sheetId 分组的规则数组
+        ObjectNode cfBySheetId = mapper.createObjectNode();
         for (int i = 0; i < wb.getNumberOfSheets(); i++) {
             XSSFSheet sheet = wb.getSheetAt(i);
             String sheetName = sheet.getSheetName();
@@ -107,6 +136,16 @@ public final class WorkbookConverter {
                 out.getSheets().put(sid, ws);
             }
             order.add(sid);
+
+            // 收集条件格式
+            ArrayNode cfRules = ConditionalFormattingConverter.readSheetCF(sheet, mapper);
+            if (cfRules.size() > 0) {
+                cfBySheetId.set(sid, cfRules);
+            }
+        }
+        // 合并 / 追加 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源
+        if (cfBySheetId.size() > 0) {
+            mergeCfResource(out, cfBySheetId, mapper);
         }
         if (out.getSheetOrder() == null || out.getSheetOrder().isEmpty()) {
             out.setSheetOrder(order);
@@ -223,5 +262,118 @@ public final class WorkbookConverter {
                 // Preserve baseline.p and baseline.custom: xlsx can't fully express; sidecar wins.
             }
         }
+    }
+
+    // ============================================================
+    // Conditional Formatting plugin resource helpers
+    // ============================================================
+
+    /**
+     * 从 src.resources 中抽取 {@code SHEET_CONDITIONAL_FORMATTING_PLUGIN} 的规则表。
+     * <p>resources 在反序列化后常为 {@code List<Map<String,Object>>}，data 字段是 JSON 字符串
+     * 或已被二次反序列化成 {@code Map}；两种情况都要兼容。
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, JsonNode> extractCfFromResources(IWorkbookData src) {
+        Map<String, JsonNode> result = new LinkedHashMap<>();
+        Object res = src.getResources();
+        if (!(res instanceof List)) {
+            return result;
+        }
+        ObjectMapper mapper = JsonMapper.get();
+        for (Object item : (List<Object>) res) {
+            if (!(item instanceof Map)) {
+                continue;
+            }
+            Map<String, Object> entry = (Map<String, Object>) item;
+            if (!CF_PLUGIN_NAME.equals(String.valueOf(entry.get("name")))) {
+                continue;
+            }
+            Object data = entry.get("data");
+            JsonNode bySheet;
+            try {
+                if (data instanceof String) {
+                    String str = ((String) data).trim();
+                    if (str.isEmpty()) {
+                        continue;
+                    }
+                    bySheet = mapper.readTree(str);
+                } else if (data != null) {
+                    bySheet = mapper.valueToTree(data);
+                } else {
+                    continue;
+                }
+            } catch (Exception e) {
+                continue;
+            }
+            if (bySheet == null || !bySheet.isObject()) {
+                continue;
+            }
+            bySheet.fields().forEachRemaining(f -> {
+                if (f.getValue() != null && f.getValue().isArray()) {
+                    result.put(f.getKey(), f.getValue());
+                }
+            });
+        }
+        return result;
+    }
+
+    /**
+     * 合并 / 追加 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源项。
+     * <p>若已存在同名资源，把新规则按 sheetId 合并进原 data；否则新增一条。
+     */
+    @SuppressWarnings("unchecked")
+    private void mergeCfResource(IWorkbookData out, ObjectNode cfBySheetId, ObjectMapper mapper) {
+        List<Object> resources;
+        Object existingRes = out.getResources();
+        if (existingRes instanceof List) {
+            resources = (List<Object>) existingRes;
+        } else {
+            resources = new ArrayList<>();
+        }
+        // 查找已有条目
+        Map<String, Object> target = null;
+        for (Object item : resources) {
+            if (item instanceof Map) {
+                Map<String, Object> m = (Map<String, Object>) item;
+                if (CF_PLUGIN_NAME.equals(String.valueOf(m.get("name")))) {
+                    target = m;
+                    break;
+                }
+            }
+        }
+        ObjectNode merged = mapper.createObjectNode();
+        if (target != null) {
+            Object data = target.get("data");
+            try {
+                JsonNode existing = null;
+                if (data instanceof String && !((String) data).trim().isEmpty()) {
+                    existing = mapper.readTree((String) data);
+                } else if (data != null) {
+                    existing = mapper.valueToTree(data);
+                }
+                if (existing != null && existing.isObject()) {
+                    existing.fields().forEachRemaining(f -> merged.set(f.getKey(), f.getValue()));
+                }
+            } catch (Exception ignored) {
+                // 坏数据直接忽略
+            }
+        }
+        cfBySheetId.fields().forEachRemaining(f -> merged.set(f.getKey(), f.getValue()));
+
+        try {
+            String dataStr = mapper.writeValueAsString(merged);
+            if (target != null) {
+                target.put("data", dataStr);
+            } else {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("name", CF_PLUGIN_NAME);
+                entry.put("data", dataStr);
+                resources.add(entry);
+            }
+        } catch (Exception ignored) {
+            return;
+        }
+        out.setResources(resources);
     }
 }

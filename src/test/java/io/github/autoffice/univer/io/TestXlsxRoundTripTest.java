@@ -1,6 +1,9 @@
 package io.github.autoffice.univer.io;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.autoffice.univer.UniverXlsx;
 import io.github.autoffice.univer.model.ICellData;
 import io.github.autoffice.univer.model.IWorkbookData;
@@ -12,6 +15,9 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,10 +49,18 @@ class TestXlsxRoundTripTest {
         assertThat(firstRead.getSheets()).as("至少应有一个工作表").isNotEmpty();
         assertThat(firstRead.getSheetOrder()).isNotEmpty();
 
-        // 2. IWorkbookData → JSON 文件
+        // 1b. 注入 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源，模拟 Univer 端携带的条件格式，
+        //     让 round-trip 验证 Conditional Format sheet 的规则能通过 resources 正确流转。
         ObjectMapper mapper = JsonMapper.get();
+        IWorksheetData cfSheet = findSheetByName(firstRead, "Conditional Format");
+        assertThat(cfSheet).as("fixture 必须包含 Conditional Format 工作表").isNotNull();
+        String cfSheetId = cfSheet.getId();
+        injectConditionalFormatting(firstRead, cfSheetId, mapper);
+
+        // 2. IWorkbookData → JSON 文件
+        ObjectMapper mapperOut = mapper;
         Path jsonFile = tmp.resolve("test.workbook.json");
-        mapper.writerWithDefaultPrettyPrinter().writeValue(jsonFile.toFile(), firstRead);
+        mapperOut.writerWithDefaultPrettyPrinter().writeValue(jsonFile.toFile(), firstRead);
         assertThat(Files.size(jsonFile)).as("导出 JSON 不应为空").isGreaterThan(0L);
 
         // 3. JSON 文件 → IWorkbookData（验证 JSON 自身可被反序列化）
@@ -127,6 +141,26 @@ class TestXlsxRoundTripTest {
                 .isNotNull();
         assertThat(a6Second.getP().getBody().getDataStream())
                 .isEqualTo("Inline Style Cell\r\n");
+
+        // 5e. 条件格式 round-trip：resources 中必须存在 SHEET_CONDITIONAL_FORMATTING_PLUGIN，
+        //     且 Conditional Format sheet 对应的规则列表非空。
+        JsonNode secondCfBySheet = extractCfResource(secondRead, mapper);
+        assertThat(secondCfBySheet)
+                .as("second read 必须包含 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源")
+                .isNotNull();
+        JsonNode cfRules = secondCfBySheet.get(cfSheetId);
+        assertThat(cfRules)
+                .as("Conditional Format sheet 的规则列表必须存在")
+                .isNotNull();
+        assertThat(cfRules.isArray()).isTrue();
+        assertThat(cfRules.size()).as("CF 规则数量非空").isGreaterThan(0);
+        // 打印片段便于人工核验
+        String resPreview = mapper.writerWithDefaultPrettyPrinter()
+                .writeValueAsString(secondRead.getResources());
+        if (resPreview.length() > 1200) {
+            resPreview = resPreview.substring(0, 1200) + "...";
+        }
+        System.out.println("[resources preview]\n" + resPreview);
     }
 
     /** 按 name 查找工作表（不区分 id 与 name 的差异）。 */
@@ -183,5 +217,161 @@ class TestXlsxRoundTripTest {
             return ((Number) v).doubleValue();
         }
         return v;
+    }
+
+    /**
+     * 注入 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源条目，供 round-trip 验证。
+     * 构造三条规则：highlightCell/formula、colorScale、dataBar，覆盖多种主型。
+     */
+    @SuppressWarnings("unchecked")
+    private static void injectConditionalFormatting(IWorkbookData wb, String sheetId, ObjectMapper mapper) throws Exception {
+        ArrayNode rules = mapper.createArrayNode();
+        rules.add(buildHighlightRule(mapper));
+        rules.add(buildColorScaleRule(mapper));
+        rules.add(buildDataBarRule(mapper));
+
+        ObjectNode bySheet = mapper.createObjectNode();
+        bySheet.set(sheetId, rules);
+
+        Map<String, Object> entry = new LinkedHashMap<>();
+        entry.put("name", "SHEET_CONDITIONAL_FORMATTING_PLUGIN");
+        entry.put("data", mapper.writeValueAsString(bySheet));
+
+        List<Object> resources;
+        Object existing = wb.getResources();
+        if (existing instanceof List) {
+            resources = (List<Object>) existing;
+        } else {
+            resources = new ArrayList<>();
+        }
+        resources.add(entry);
+        wb.setResources(resources);
+    }
+
+    private static ObjectNode buildHighlightRule(ObjectMapper mapper) {
+        ObjectNode rule = mapper.createObjectNode();
+        rule.put("cfId", "testHl");
+        ArrayNode ranges = mapper.createArrayNode();
+        ObjectNode r = mapper.createObjectNode();
+        r.put("startRow", 0);
+        r.put("startColumn", 0);
+        r.put("endRow", 9);
+        r.put("endColumn", 4);
+        r.put("startAbsoluteRefType", 0);
+        r.put("endAbsoluteRefType", 0);
+        r.put("rangeType", 0);
+        ranges.add(r);
+        rule.set("ranges", ranges);
+        ObjectNode body = mapper.createObjectNode();
+        body.put("type", "highlightCell");
+        body.put("subType", "formula");
+        body.put("value", "=MOD(ROW(A1),2)=0");
+        ObjectNode style = mapper.createObjectNode();
+        ObjectNode bg = mapper.createObjectNode();
+        bg.put("rgb", "#cccccc");
+        style.set("bg", bg);
+        body.set("style", style);
+        rule.set("rule", body);
+        rule.put("stopIfTrue", false);
+        return rule;
+    }
+
+    private static ObjectNode buildColorScaleRule(ObjectMapper mapper) {
+        ObjectNode rule = mapper.createObjectNode();
+        rule.put("cfId", "testCs");
+        ArrayNode ranges = mapper.createArrayNode();
+        ObjectNode r = mapper.createObjectNode();
+        r.put("startRow", 12);
+        r.put("startColumn", 0);
+        r.put("endRow", 21);
+        r.put("endColumn", 0);
+        r.put("startAbsoluteRefType", 0);
+        r.put("endAbsoluteRefType", 0);
+        r.put("rangeType", 0);
+        ranges.add(r);
+        rule.set("ranges", ranges);
+        ObjectNode body = mapper.createObjectNode();
+        body.put("type", "colorScale");
+        ArrayNode config = mapper.createArrayNode();
+        ObjectNode p0 = mapper.createObjectNode();
+        p0.put("color", "#f1eafa");
+        ObjectNode v0 = mapper.createObjectNode();
+        v0.put("type", "min");
+        v0.put("value", 0);
+        p0.set("value", v0);
+        p0.put("index", 0);
+        ObjectNode p1 = mapper.createObjectNode();
+        p1.put("color", "#6721cb");
+        ObjectNode v1 = mapper.createObjectNode();
+        v1.put("type", "max");
+        v1.put("value", 100);
+        p1.set("value", v1);
+        p1.put("index", 1);
+        config.add(p0);
+        config.add(p1);
+        body.set("config", config);
+        rule.set("rule", body);
+        rule.put("stopIfTrue", false);
+        return rule;
+    }
+
+    private static ObjectNode buildDataBarRule(ObjectMapper mapper) {
+        ObjectNode rule = mapper.createObjectNode();
+        rule.put("cfId", "testDb");
+        ArrayNode ranges = mapper.createArrayNode();
+        ObjectNode r = mapper.createObjectNode();
+        r.put("startRow", 24);
+        r.put("startColumn", 0);
+        r.put("endRow", 33);
+        r.put("endColumn", 0);
+        r.put("startAbsoluteRefType", 0);
+        r.put("endAbsoluteRefType", 0);
+        r.put("rangeType", 0);
+        ranges.add(r);
+        rule.set("ranges", ranges);
+        ObjectNode body = mapper.createObjectNode();
+        body.put("type", "dataBar");
+        ObjectNode config = mapper.createObjectNode();
+        ObjectNode min = mapper.createObjectNode();
+        min.put("type", "min");
+        min.put("value", 0);
+        config.set("min", min);
+        ObjectNode max = mapper.createObjectNode();
+        max.put("type", "max");
+        max.put("value", 100);
+        config.set("max", max);
+        config.put("isGradient", true);
+        config.put("positiveColor", "#abd91a");
+        config.put("nativeColor", "#abd91a");
+        body.set("config", config);
+        rule.set("rule", body);
+        rule.put("stopIfTrue", false);
+        return rule;
+    }
+
+    /** 从 resources 中取出 SHEET_CONDITIONAL_FORMATTING_PLUGIN 的 data（解析为 JsonNode）。 */
+    @SuppressWarnings("unchecked")
+    private static JsonNode extractCfResource(IWorkbookData wb, ObjectMapper mapper) throws Exception {
+        Object res = wb.getResources();
+        if (!(res instanceof List)) {
+            return null;
+        }
+        for (Object item : (List<Object>) res) {
+            if (!(item instanceof Map)) {
+                continue;
+            }
+            Map<String, Object> m = (Map<String, Object>) item;
+            if (!"SHEET_CONDITIONAL_FORMATTING_PLUGIN".equals(String.valueOf(m.get("name")))) {
+                continue;
+            }
+            Object data = m.get("data");
+            if (data instanceof String) {
+                return mapper.readTree((String) data);
+            }
+            if (data != null) {
+                return mapper.valueToTree(data);
+            }
+        }
+        return null;
     }
 }
