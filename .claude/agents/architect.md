@@ -35,7 +35,7 @@ model: opus
 - 主库：Apache POI 5.2.5（`poi` + `poi-ooxml`）+ Jackson 2.17 + Lombok
 - 测试：JUnit 5 + AssertJ
 - 构建：Maven Wrapper（`./mvnw`），lint profile 钉到 `maven-pmd-plugin:3.21.2` 以兼容 `p3c-pmd:2.1.1`
-- example：Spring Boot 3.3.4（JDK 17）+ Vue 3 + Vite + `@univerjs/presets`
+- example：Spring Boot 2.7.18（JDK 8）+ Vue 3 + Vite + `@univerjs/presets`
 
 ## 关键文档
 

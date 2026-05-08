@@ -126,15 +126,15 @@ Apache 2.0
 
 ## Demo / 示例
 
-仓库内提供了端到端 demo（`example/`），用 Spring Boot 3 后端 + Vue 3 前端演示库的实际用法：
+仓库内提供了端到端 demo（`example/`），用 Spring Boot 2.7 后端 + Vue 3 前端演示库的实际用法：
 用 Univer Sheets 作为前端编辑器，后端通过 `UniverXlsx` 完成 xlsx 与 `IWorkbookData` 的双向转换。
 
-A full end-to-end demo lives under `example/` (Spring Boot 3 backend + Vue 3 frontend) showing real usage:
+A full end-to-end demo lives under `example/` (Spring Boot 2.7 backend + Vue 3 frontend) showing real usage:
 Univer Sheets as the in-browser editor, backend uses `UniverXlsx` for bidirectional xlsx ↔ `IWorkbookData` conversion.
 
 ```
 example/
-├── backend/    # Spring Boot 3.3.4 + JDK 17，提供 /api/import 与 /api/export
+├── backend/    # Spring Boot 2.7.18 + JDK 8，提供 /api/import 与 /api/export
 └── frontend/   # Vue 3 + Vite + TS，集成 @univerjs/presets
 ```
 
@@ -149,7 +149,7 @@ example/
 
 ### 启动 / Run
 
-前置：JDK 8+（库构建）、JDK 17（运行 Spring Boot 3 后端）、Node 18+。
+前置：JDK 8+、Node 18+。后端选用 Spring Boot 2.7.18，与库本身保持 JDK 8 兼容。
 
 ```bash
 # 1. 把 univer-lib 装到本地 Maven 仓库（首次需要）
@@ -157,7 +157,7 @@ example/
 
 # 2. 启动后端（默认 http://localhost:8080）
 cd example/backend
-JAVA_HOME=$(/usr/libexec/java_home -v 17) ../../mvnw spring-boot:run
+../../mvnw spring-boot:run
 
 # 3. 启动前端（默认 http://localhost:5173）
 cd example/frontend

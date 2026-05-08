@@ -79,7 +79,10 @@ public final class WorksheetConverter {
     private void writeSheetAttrs(XSSFSheet sheet, IWorksheetData src) {
         // tabColor
         if (src.getTabColor() != null) {
-            sheet.setTabColor(new XSSFColor(ColorUtils.rgbHexToArgb(src.getTabColor()), null));
+            byte[] argb = ColorUtils.rgbHexToArgb(src.getTabColor());
+            if (argb != null) {
+                sheet.setTabColor(new XSSFColor(argb, null));
+            }
         }
         // defaultColumnWidth (px)
         if (src.getDefaultColumnWidth() != null) {
@@ -254,8 +257,40 @@ public final class WorksheetConverter {
         readColumnData(sheet, dst);
         readMergedRegions(sheet, dst);
         readFreeze(sheet, dst);
+        // rowCount / columnCount 是 Univer 渲染网格必需字段；缺失会导致前端显示空白表
+        // rowCount / columnCount are required for Univer to render the grid; missing them shows blank
+        computeDimensions(sheet, dst);
 
         return dst;
+    }
+
+    /** 推断 rowCount / columnCount：取实际使用范围再留一些空行空列。 */
+    private void computeDimensions(XSSFSheet sheet, IWorksheetData dst) {
+        int maxRow = sheet.getLastRowNum();
+        int maxCol = 0;
+        for (org.apache.poi.ss.usermodel.Row row : sheet) {
+            short last = row.getLastCellNum();
+            if (last > maxCol) {
+                maxCol = last;
+            }
+        }
+        // 合并区域也可能扩展边界 / merged regions can extend bounds
+        if (dst.getMergeData() != null) {
+            for (IRange r : dst.getMergeData()) {
+                if (r.getEndRow() != null && r.getEndRow() > maxRow) {
+                    maxRow = r.getEndRow();
+                }
+                if (r.getEndColumn() != null && r.getEndColumn() >= maxCol) {
+                    maxCol = r.getEndColumn() + 1;
+                }
+            }
+        }
+        // 给用户留一些空行空列用于编辑；最小值参考 Univer 默认（1000 行 × 26 列）
+        // leave headroom for editing; minimums match Univer defaults (1000 rows × 26 cols)
+        int rowCount = Math.max(maxRow + 20, 100);
+        int columnCount = Math.max(maxCol + 5, 26);
+        dst.setRowCount(rowCount);
+        dst.setColumnCount(columnCount);
     }
 
     /** 读工作表级属性 / read sheet-level attributes. */
@@ -314,6 +349,14 @@ public final class WorksheetConverter {
                 ICellData data = cells.readCell(xCell);
                 if (data == null) {
                     continue;
+                }
+                // 富文本检测：STRING 类型且有多个 formatting runs 时转为 IDocumentData
+                // Rich text detection: if STRING cell has multiple formatting runs, convert to IDocumentData
+                if (xCell.getCellType() == CellType.STRING) {
+                    XSSFRichTextString rts = xCell.getRichStringCellValue();
+                    if (rts != null && rts.numFormattingRuns() > 1) {
+                        data.setP(rich.fromPoi(rts));
+                    }
                 }
                 // 公式：追加 si / formula: attach si
                 if (xCell.getCellType() == CellType.FORMULA && data.getF() != null) {

@@ -16,7 +16,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import java.util.Collections;
 
 /**
  * xlsx 导入导出 REST 接口。
@@ -67,7 +67,7 @@ public class UniverXlsxController {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             UniverXlsx.write(wb, out);
             byte[] bytes = out.toByteArray();
-            String fileName = URLEncoder.encode(name + ".xlsx", StandardCharsets.UTF_8).replace("+", "%20");
+            String fileName = URLEncoder.encode(name + ".xlsx", StandardCharsets.UTF_8.name()).replace("+", "%20");
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.parseMediaType(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
@@ -77,7 +77,7 @@ public class UniverXlsxController {
         } catch (JsonProcessingException e) {
             return ResponseEntity.badRequest()
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(mapper.writeValueAsString(Map.of("error", e.getMessage())));
+                .body(mapper.writeValueAsString(Collections.singletonMap("error", e.getMessage())));
         }
     }
 
@@ -85,6 +85,7 @@ public class UniverXlsxController {
     private ResponseEntity<String> errorJson(String message) throws JsonProcessingException {
         return ResponseEntity.badRequest()
             .contentType(MediaType.APPLICATION_JSON)
-            .body(mapper.writeValueAsString(Map.of("error", message == null ? "unknown error" : message)));
+            .body(mapper.writeValueAsString(
+                Collections.singletonMap("error", message == null ? "unknown error" : message)));
     }
 }

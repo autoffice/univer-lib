@@ -11,7 +11,7 @@ model: opus
 1. 需求定义和澄清，维护 `docs/design.md` 设计文档
 2. 特性优先级排序、版本规划
 3. 验收标准制定与验收测试
-4. 例：example/ 下 demo 的体验把关（Spring Boot 3 + Vue 3）
+4. 例：example/ 下 demo 的体验把关（Spring Boot 2.7 + Vue 3）
 
 ## 工作规范
 

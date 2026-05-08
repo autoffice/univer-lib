@@ -14,12 +14,7 @@ const loading = ref<boolean>(false)
 let univerInstance: Univer | null = null
 let univerAPIInstance: FUniver | null = null
 
-function initUniver(initialData?: any) {
-  if (univerInstance) {
-    univerInstance.dispose()
-    univerInstance = null
-    univerAPIInstance = null
-  }
+function initUniver() {
   const { univer, univerAPI } = createUniver({
     locale: LocaleType.ZH_CN,
     locales: {
@@ -31,11 +26,39 @@ function initUniver(initialData?: any) {
   })
   univerInstance = univer
   univerAPIInstance = univerAPI
-  if (initialData) {
-    univerAPI.createWorkbook(initialData)
-  } else {
-    univerAPI.createWorkbook({})
+  // 创建空白工作簿 / create an empty workbook so the sheet area renders immediately
+  univerAPI.createWorkbook({ id: 'default', name: 'Empty', sheetOrder: ['sheet-1'], sheets: { 'sheet-1': { id: 'sheet-1', name: 'Sheet1' } } })
+}
+
+function loadWorkbook(data: any) {
+  if (!univerAPIInstance) return
+  // 销毁当前活动工作簿后挂载新快照。dispose 整个 Univer 实例会把容器 DOM 一并清掉，导致新实例渲染不出来。
+  // Dispose only the active unit instead of the whole Univer instance, otherwise the container DOM is wiped.
+  const current = univerAPIInstance.getActiveWorkbook()
+  const currentId = current?.getId()
+  if (currentId) {
+    univerAPIInstance.disposeUnit(currentId)
   }
+  // 兜底必需字段：Univer 要求至少一个 sheet，且 sheetOrder 非空才有默认激活
+  const safeData = normalizeWorkbook(data)
+  univerAPIInstance.createWorkbook(safeData)
+}
+
+function normalizeWorkbook(data: any): any {
+  const out = { ...(data || {}) }
+  if (!out.id) out.id = `wb-${Date.now()}`
+  const sheets = out.sheets && typeof out.sheets === 'object' ? out.sheets : {}
+  const sheetIds = Object.keys(sheets)
+  if (sheetIds.length === 0) {
+    const sid = 'sheet-1'
+    out.sheets = { [sid]: { id: sid, name: 'Sheet1' } }
+    out.sheetOrder = [sid]
+  } else {
+    out.sheets = sheets
+    const order: string[] = Array.isArray(out.sheetOrder) ? out.sheetOrder.filter((s: string) => sheetIds.includes(s)) : []
+    out.sheetOrder = order.length > 0 ? order : sheetIds
+  }
+  return out
 }
 
 async function onImport(e: Event) {
@@ -53,7 +76,7 @@ async function onImport(e: Event) {
       throw new Error(errText)
     }
     const data = await resp.json()
-    initUniver(data)
+    loadWorkbook(data)
     status.value = `已导入 ${file.name} / Imported ${file.name}`
   } catch (err: any) {
     status.value = `导入失败 / Import failed: ${err.message}`
@@ -105,6 +128,8 @@ async function onExport() {
 
 onMounted(() => initUniver())
 onBeforeUnmount(() => {
+  // 整个页面/组件卸载时用 dispose；分别 disposeUnit 只用于切换工作簿。
+  // Use dispose() on component unmount; disposeUnit is only for switching workbooks.
   univerInstance?.dispose()
   univerInstance = null
   univerAPIInstance = null

@@ -2,69 +2,141 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-  <modelVersion>4.0.0</modelVersion>
-  <groupId>io.github.autoffice</groupId>
-  <artifactId>univer-lib</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
-  <packaging>jar</packaging>
+    <modelVersion>4.0.0</modelVersion>
 
-  <properties>
-    <maven.compiler.source>1.8</maven.compiler.source>
-    <maven.compiler.target>1.8</maven.compiler.target>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <poi.version>5.2.5</poi.version>
-    <jackson.version>2.17.2</jackson.version>
-    <lombok.version>1.18.32</lombok.version>
-    <junit.version>5.10.2</junit.version>
-    <assertj.version>3.25.3</assertj.version>
-  </properties>
+    <groupId>io.github.autoffice</groupId>
+    <artifactId>univer-lib</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
 
-  <dependencies>
-    <dependency><groupId>org.apache.poi</groupId><artifactId>poi</artifactId><version>${poi.version}</version></dependency>
-    <dependency><groupId>org.apache.poi</groupId><artifactId>poi-ooxml</artifactId><version>${poi.version}</version></dependency>
-    <dependency><groupId>com.fasterxml.jackson.core</groupId><artifactId>jackson-databind</artifactId><version>${jackson.version}</version></dependency>
-    <dependency><groupId>org.projectlombok</groupId><artifactId>lombok</artifactId><version>${lombok.version}</version><scope>provided</scope></dependency>
-    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><version>${junit.version}</version><scope>test</scope></dependency>
-    <dependency><groupId>org.assertj</groupId><artifactId>assertj-core</artifactId><version>${assertj.version}</version><scope>test</scope></dependency>
-  </dependencies>
+    <properties>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <poi.version>5.2.5</poi.version>
+        <jackson.version>2.17.2</jackson.version>
+        <lombok.version>1.18.32</lombok.version>
+        <junit.version>5.10.2</junit.version>
+        <assertj.version>3.25.3</assertj.version>
+    </properties>
 
-  <build>
-    <plugins>
-      <plugin><artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version></plugin>
-    </plugins>
-  </build>
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
 
-  <profiles>
-    <profile>
-      <id>coverage</id>
-      <build><plugins>
-        <plugin>
-          <groupId>org.jacoco</groupId><artifactId>jacoco-maven-plugin</artifactId><version>0.8.12</version>
-          <executions>
-            <execution><goals><goal>prepare-agent</goal></goals></execution>
-            <execution><id>report</id><phase>verify</phase><goals><goal>report</goal></goals></execution>
-          </executions>
-        </plugin>
-      </plugins></build>
-    </profile>
-    <!--
-      lint profile：阿里巴巴 p3c-pmd 检查。
-      The lint profile (Alibaba p3c-pmd) is disabled because the latest published
-      `com.alibaba.p3c:p3c-pmd:2.1.1` is incompatible with the current
-      maven-pmd-plugin / PMD 7.x runtime (NoSuchMethodError on
-      net.sourceforge.pmd.lang.BaseLanguageModule). Re-enable when p3c-pmd
-      publishes a PMD 7-compatible release.
-    -->
-    <profile>
-      <id>lint</id>
-      <build><plugins>
-        <plugin>
-          <groupId>org.apache.maven.plugins</groupId><artifactId>maven-pmd-plugin</artifactId><version>3.21.2</version>
-          <configuration><rulesets><ruleset>rulesets/java/ali-naming.xml</ruleset></rulesets></configuration>
-          <dependencies><dependency><groupId>com.alibaba.p3c</groupId><artifactId>p3c-pmd</artifactId><version>2.1.1</version></dependency></dependencies>
-          <executions><execution><phase>verify</phase><goals><goal>check</goal></goals></execution></executions>
-        </plugin>
-      </plugins></build>
-    </profile>
-  </profiles>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- 覆盖率 profile：./mvnw -Pcoverage verify 生成 JaCoCo 报告 -->
+        <!-- Coverage profile: ./mvnw -Pcoverage verify produces JaCoCo report -->
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>0.8.12</version>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                            </execution>
+                            <execution>
+                                <id>report</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            lint profile：阿里巴巴 p3c-pmd 检查。
+            p3c-pmd:2.1.1 基于 PMD 6，故 maven-pmd-plugin 固定到 3.21.2（使用 PMD 6.55）。
+            不要升级到 3.22+（会切到 PMD 7 并触发 NoSuchMethodError），等 p3c-pmd 发布 PMD 7 兼容版。
+
+            lint profile: Alibaba p3c-pmd checks.
+            p3c-pmd:2.1.1 is PMD 6 based, so maven-pmd-plugin is pinned to 3.21.2 (PMD 6.55).
+            Do NOT bump to 3.22+ (would switch to PMD 7 and break with NoSuchMethodError) until
+            p3c-pmd releases a PMD 7 compatible build.
+        -->
+        <profile>
+            <id>lint</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-pmd-plugin</artifactId>
+                        <version>3.21.2</version>
+                        <configuration>
+                            <rulesets>
+                                <ruleset>rulesets/java/ali-naming.xml</ruleset>
+                            </rulesets>
+                        </configuration>
+                        <dependencies>
+                            <dependency>
+                                <groupId>com.alibaba.p3c</groupId>
+                                <artifactId>p3c-pmd</artifactId>
+                                <version>2.1.1</version>
+                            </dependency>
+                        </dependencies>
+                        <executions>
+                            <execution>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

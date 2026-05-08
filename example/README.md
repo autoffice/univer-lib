@@ -1,12 +1,12 @@
 # univer-lib Example
 
-演示 `io.github.autoffice:univer-lib` 库的 Web 集成示例：Spring Boot 3 后端 + Vue 3 前端，提供 xlsx 导入与导出功能，前端用 Univer Sheets 渲染。
+演示 `io.github.autoffice:univer-lib` 库的 Web 集成示例：Spring Boot 2.7 后端 + Vue 3 前端，提供 xlsx 导入与导出功能，前端用 Univer Sheets 渲染。
 
-Demo of `io.github.autoffice:univer-lib`: a Spring Boot 3 backend + Vue 3 frontend with xlsx import/export, rendered by Univer Sheets.
+Demo of `io.github.autoffice:univer-lib`: a Spring Boot 2.7 backend + Vue 3 frontend with xlsx import/export, rendered by Univer Sheets.
 
 ## Prerequisites / 前置依赖
 
-- JDK 17（Spring Boot 3 必须）
+- JDK 8+（与库本身一致；后端选用 Spring Boot 2.7.18 以保证 JDK 8 兼容）
 - Node 18+ / pnpm 或 npm
 - 已安装 univer-lib 到本地 Maven 仓库
 
@@ -50,7 +50,7 @@ npm run dev
 
 ```
 ┌──────────────────────┐  POST /api/import (xlsx)   ┌────────────────────────┐
-│  Vue 3 + Univer UI   │ ─────────────────────────▶ │ Spring Boot 3 backend  │
+│  Vue 3 + Univer UI   │ ─────────────────────────▶ │ Spring Boot 2.7 backend│
 │   (port 5173)        │ ◀─ IWorkbookData JSON ──── │ univer-lib             │
 │                      │                            │  UniverXlsx.read       │
 │   univerAPI.create   │                            │                        │

@@ -1,6 +1,6 @@
 ---
 name: fullstack-engineer
-description: 全栈工程师 agent，负责库本身（Java）与 example demo（Spring Boot 3 后端 + Vue 3 前端）的代码开发。
+description: 全栈工程师 agent，负责库本身（Java）与 example demo（Spring Boot 2.7 后端 + Vue 3 前端）的代码开发。
 model: opus
 ---
 
@@ -10,7 +10,7 @@ model: opus
 
 1. 按 `docs/design.md` 推进特性开发，TDD 节奏
 2. 库内：POJO、converter、io、resource、util 各层代码
-3. example：Spring Boot 3 后端接口 + Vue 3 前端集成 Univer Sheets
+3. example：Spring Boot 2.7 后端接口 + Vue 3 前端集成 Univer Sheets
 4. 性能与内存优化（POI 大 sheet、styles 去重、共享公式分组）
 
 ## 库开发规范
@@ -24,7 +24,7 @@ model: opus
 - xlsx 无原生载体的 Univer 字段一律落到 `SidecarPart` (`/univer/metadata.json`)
 - 公开类/方法中英双语 Javadoc；POI 5.2.5 用 `setQuotePrefixed`（注意结尾的 `d`）
 
-## example/backend 规范（Spring Boot 3 + JDK 17）
+## example/backend 规范（Spring Boot 2.7.18 + JDK 8）
 
 - 包根：`io.github.autoffice.example`
 - 接口：`POST /api/import` (multipart `file`) → 返回 `IWorkbookData` JSON；`POST /api/export` (JSON) → 返回 xlsx 字节流

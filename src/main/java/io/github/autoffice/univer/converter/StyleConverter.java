@@ -189,7 +189,10 @@ public final class StyleConverter {
             font.setStrikeout(true);
         }
         if (s.getCl() != null && s.getCl().getRgb() != null) {
-            font.setColor(new XSSFColor(ColorUtils.rgbHexToArgb(s.getCl().getRgb()), null));
+            byte[] argb = ColorUtils.rgbHexToArgb(s.getCl().getRgb());
+            if (argb != null) {
+                font.setColor(new XSSFColor(argb, null));
+            }
         }
         if (s.getVa() != null) {
             int va = s.getVa();
@@ -205,8 +208,11 @@ public final class StyleConverter {
 
     private void applyBackground(IStyleData s, XSSFCellStyle style) {
         if (s.getBg() != null && s.getBg().getRgb() != null) {
-            style.setFillForegroundColor(new XSSFColor(ColorUtils.rgbHexToArgb(s.getBg().getRgb()), null));
-            style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            byte[] argb = ColorUtils.rgbHexToArgb(s.getBg().getRgb());
+            if (argb != null) {
+                style.setFillForegroundColor(new XSSFColor(argb, null));
+                style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            }
         }
     }
 
@@ -230,7 +236,10 @@ public final class StyleConverter {
         BorderStyle bs = (idx >= 0 && idx < values.length) ? values[idx] : BorderStyle.NONE;
         XSSFColor color = null;
         if (edge.getCl() != null && edge.getCl().getRgb() != null) {
-            color = new XSSFColor(ColorUtils.rgbHexToArgb(edge.getCl().getRgb()), null);
+            byte[] argb = ColorUtils.rgbHexToArgb(edge.getCl().getRgb());
+            if (argb != null) {
+                color = new XSSFColor(argb, null);
+            }
         }
         switch (e) {
             case TOP:

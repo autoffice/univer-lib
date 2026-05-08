@@ -2,7 +2,6 @@ package io.github.autoffice.univer.util;
 
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ColorUtilsTest {
     @Test
@@ -27,8 +26,13 @@ class ColorUtilsTest {
         assertThat(ColorUtils.argbToRgbHex(null)).isNull();
     }
     @Test
-    void should_throw_on_invalid_hex() {
-        assertThatThrownBy(() -> ColorUtils.rgbHexToArgb("#xyz"))
-            .isInstanceOf(IllegalArgumentException.class);
+    void should_return_null_for_invalid_or_empty_hex() {
+        // 前端快照里颜色字段常为 null/""/非法值，util 需宽松处理返回 null，由调用方跳过
+        // Front-end snapshots often carry null/empty/malformed color strings; utility returns null so callers can skip.
+        assertThat(ColorUtils.rgbHexToArgb(null)).isNull();
+        assertThat(ColorUtils.rgbHexToArgb("")).isNull();
+        assertThat(ColorUtils.rgbHexToArgb("   ")).isNull();
+        assertThat(ColorUtils.rgbHexToArgb("#xyz")).isNull();
+        assertThat(ColorUtils.rgbHexToArgb("#abcd")).isNull();
     }
 }

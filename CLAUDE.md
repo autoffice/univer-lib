@@ -25,9 +25,9 @@ All Maven commands use the wrapper. Do **not** invoke system `mvn`.
 ./mvnw install -DskipTests               # publish to ~/.m2/repository so example/backend can resolve it
 ```
 
-Example demo (`example/`) is a separate Spring Boot 3 + Vue 3 app, not a Maven submodule:
+Example demo (`example/`) is a separate Spring Boot 2.7 + Vue 3 app (JDK 8 兼容), not a Maven submodule:
 ```bash
-cd example/backend && ../../mvnw spring-boot:run     # requires JDK 17
+cd example/backend && ../../mvnw spring-boot:run     # JDK 8+ 即可
 cd example/frontend && npm install && npm run dev    # http://localhost:5173
 ```
 

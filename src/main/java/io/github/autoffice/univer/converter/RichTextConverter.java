@@ -35,6 +35,7 @@ public final class RichTextConverter {
     /**
      * 将 IDocumentData 转为 POI 富文本。
      * Convert IDocumentData to POI rich text string.
+     * <p>Univer 的 dataStream 以 "\r\n" 作为段落终止符，写回 xlsx 时需剥离并切换为换行。
      */
     public XSSFRichTextString toPoi(IDocumentData p) {
         if (p == null || p.getBody() == null) {
@@ -44,54 +45,92 @@ public final class RichTextConverter {
         if (dataStream == null || dataStream.isEmpty()) {
             return new XSSFRichTextString("");
         }
-        XSSFRichTextString rts = new XSSFRichTextString(dataStream);
+        // 去掉 Univer 段落终止符 "\r\n"，把内部保留的 "\r\n" 合并成 "\n"
+        String plain = dataStream.replace("\r\n", "\n");
+        while (plain.endsWith("\n")) {
+            plain = plain.substring(0, plain.length() - 1);
+        }
+        XSSFRichTextString rts = new XSSFRichTextString(plain);
         List<IDocumentData.TextRun> runs = p.getBody().getTextRuns();
         if (runs != null) {
+            int plainLen = plain.length();
             for (IDocumentData.TextRun run : runs) {
                 if (run == null || run.getSt() == null || run.getEd() == null) {
                     continue;
                 }
+                int st = Math.max(0, Math.min(run.getSt(), plainLen));
+                int ed = Math.max(st, Math.min(run.getEd(), plainLen));
+                if (st >= ed) {
+                    continue;
+                }
                 XSSFFont font = createFont(run.getTs() == null ? new IStyleData() : run.getTs());
-                rts.applyFont(run.getSt(), run.getEd(), font);
+                rts.applyFont(st, ed, font);
             }
         }
         return rts;
     }
 
     /**
-     * 将 POI 富文本转为 IDocumentData。
-     * Convert POI rich text string to IDocumentData.
+     * 将 POI 富文本转为 IDocumentData，格式严格匹配 Univer Docs 约定。
+     * Convert POI rich text to IDocumentData, strictly matching Univer's doc-stream convention:
+     * <ul>
+     *   <li>dataStream 以 "\r\n" 作为段落终止符；每段结尾追加 "\r\n"。</li>
+     *   <li>paragraphs 至少一项，startIndex 指向段落尾字符（即 "\r" 前的位置）。</li>
+     *   <li>textRuns 的 st/ed 基于 dataStream 的索引。</li>
+     * </ul>
      */
     public IDocumentData fromPoi(XSSFRichTextString rts) {
-        String dataStream = rts == null || rts.getString() == null ? "" : rts.getString();
+        String raw = rts == null || rts.getString() == null ? "" : rts.getString();
 
+        // 按 \n 切段（xlsx 中段内换行也是 \n），每段后追加 "\r\n"
+        StringBuilder streamBuilder = new StringBuilder();
+        List<IDocumentData.Paragraph> paragraphs = new ArrayList<>();
+        String[] lines = raw.split("\n", -1);
+        int cursor = 0;
+        for (String line : lines) {
+            streamBuilder.append(line);
+            cursor += line.length();
+            paragraphs.add(new IDocumentData.Paragraph().setStartIndex(cursor));
+            streamBuilder.append("\r\n");
+            cursor += 2;
+        }
+        String dataStream = streamBuilder.toString();
+
+        // 计算 raw 索引 → dataStream 索引的偏移（每经过一个 "\n" 就 +1，因为 "\n" 变成了 "\r\n"）
         List<IDocumentData.TextRun> runs = new ArrayList<>();
         if (rts != null) {
             int count = rts.numFormattingRuns();
             for (int i = 0; i < count; i++) {
-                int st = rts.getIndexOfFormattingRun(i);
-                int len = rts.getLengthOfFormattingRun(i);
-                int ed = st + len;
+                int rawSt = rts.getIndexOfFormattingRun(i);
+                int rawLen = rts.getLengthOfFormattingRun(i);
+                int rawEd = rawSt + rawLen;
                 XSSFFont font = rts.getFontOfFormattingRun(i);
                 if (font == null) {
                     continue;
                 }
                 IStyleData ts = fontToStyle(font);
+                int st = mapRawIndex(raw, rawSt);
+                int ed = mapRawIndex(raw, rawEd);
                 runs.add(new IDocumentData.TextRun().setSt(st).setEd(ed).setTs(ts));
             }
-        }
-
-        List<IDocumentData.Paragraph> paragraphs = new ArrayList<>();
-        int idx = dataStream.indexOf('\n');
-        while (idx >= 0) {
-            paragraphs.add(new IDocumentData.Paragraph().setStartIndex(idx));
-            idx = dataStream.indexOf('\n', idx + 1);
         }
 
         return new IDocumentData().setBody(new IDocumentData.Body()
             .setDataStream(dataStream)
             .setTextRuns(runs)
             .setParagraphs(paragraphs));
+    }
+
+    /** 把 raw 索引（仅含 "\n"）换算为 dataStream 索引（"\n" 已变成 "\r\n"）。 */
+    private static int mapRawIndex(String raw, int rawIdx) {
+        int extra = 0;
+        int max = Math.min(rawIdx, raw.length());
+        for (int i = 0; i < max; i++) {
+            if (raw.charAt(i) == '\n') {
+                extra++;
+            }
+        }
+        return rawIdx + extra;
     }
 
     // ============================================================
@@ -123,7 +162,10 @@ public final class RichTextConverter {
             font.setStrikeout(true);
         }
         if (ts.getCl() != null && ts.getCl().getRgb() != null) {
-            font.setColor(new XSSFColor(ColorUtils.rgbHexToArgb(ts.getCl().getRgb()), null));
+            byte[] argb = ColorUtils.rgbHexToArgb(ts.getCl().getRgb());
+            if (argb != null) {
+                font.setColor(new XSSFColor(argb, null));
+            }
         }
         return font;
     }
