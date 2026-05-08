@@ -49,6 +49,28 @@ class CellConverterTest {
     }
 
     @Test
+    void should_cache_quote_prefix_variant_for_force_text() {
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            CellConverter cc = new CellConverter(new StyleConverter(wb));
+            // 三个具有相同（空）样式的 FORCE_TEXT 单元格应共享一个 quotePrefix 样式变体
+            // Three FORCE_TEXT cells with same (null) style must share one quote-prefix variant.
+            XSSFCell c1 = newCell(wb);
+            cc.writeCell(c1, new ICellData().setV("a").setT(CellValueType.FORCE_TEXT));
+            XSSFCell c2 = wb.getSheetAt(0).createRow(1).createCell(0);
+            cc.writeCell(c2, new ICellData().setV("b").setT(CellValueType.FORCE_TEXT));
+            XSSFCell c3 = wb.getSheetAt(0).createRow(2).createCell(0);
+            cc.writeCell(c3, new ICellData().setV("c").setT(CellValueType.FORCE_TEXT));
+
+            // POI 默认样式占 1 个，quotePrefix 变体占 1 个，合计 2
+            // POI's default style counts as 1, plus our 1 quote-prefix variant = 2.
+            assertThat(wb.getNumCellStyles()).isEqualTo(2);
+            assertThat(c1.getCellStyle().getQuotePrefixed()).isTrue();
+            assertThat(c1.getCellStyle().getIndex()).isEqualTo(c2.getCellStyle().getIndex());
+            assertThat(c2.getCellStyle().getIndex()).isEqualTo(c3.getCellStyle().getIndex());
+        } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    @Test
     void should_write_formula_and_read_back() {
         try (XSSFWorkbook wb = new XSSFWorkbook()) {
             CellConverter cc = new CellConverter(new StyleConverter(wb));

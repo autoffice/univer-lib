@@ -6,7 +6,6 @@ import io.github.autoffice.univer.model.IStyleData;
 import org.apache.poi.ss.usermodel.CellType;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFCellStyle;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 /**
  * 单元格数据转换器：在 ICellData 与 POI XSSFCell 之间双向映射。
@@ -161,49 +160,25 @@ public final class CellConverter {
 
     /**
      * 应用样式到单元格（写路径）。
-     * FORCE_TEXT 需要 quotePrefix=true。
+     * FORCE_TEXT 需要 quotePrefix=true，通过 StyleConverter 的缓存变体避免产生大量样式对象。
      */
     private void applyStyle(XSSFCell poiCell, ICellData src) {
         boolean isForceText = src.getT() == CellValueType.FORCE_TEXT;
         Object styleObj = src.getS();
 
         if (styleObj instanceof IStyleData) {
-            // 内联样式对象 / inline style object
-            XSSFCellStyle baseStyle = styles.toPoiStyle((IStyleData) styleObj);
+            IStyleData styleData = (IStyleData) styleObj;
             if (isForceText) {
-                // 克隆样式并设置 quotePrefix / clone and set quotePrefix
-                XSSFCellStyle forceTextStyle = cloneWithQuotePrefix(poiCell, baseStyle);
-                poiCell.setCellStyle(forceTextStyle);
+                poiCell.setCellStyle(styles.toPoiStyleWithQuotePrefix(styleData));
             } else {
-                poiCell.setCellStyle(baseStyle);
+                poiCell.setCellStyle(styles.toPoiStyle(styleData));
             }
         } else if (isForceText) {
-            // 无样式但需要 quotePrefix / no style but need quotePrefix
-            XSSFCellStyle forceTextStyle = createQuotePrefixStyle(poiCell);
-            poiCell.setCellStyle(forceTextStyle);
+            // 无内联样式但需要 quotePrefix；交给 StyleConverter 去重缓存
+            // No inline style but still need quotePrefix; let StyleConverter cache a shared variant.
+            poiCell.setCellStyle(styles.toPoiStyleWithQuotePrefix(null));
         }
         // 如果 styleObj 是 String（样式 id），由调用方处理，这里跳过
-    }
-
-    /**
-     * 克隆样式并设置 quotePrefix=true。
-     */
-    private XSSFCellStyle cloneWithQuotePrefix(XSSFCell poiCell, XSSFCellStyle source) {
-        XSSFWorkbook wb = poiCell.getSheet().getWorkbook();
-        XSSFCellStyle cloned = wb.createCellStyle();
-        cloned.cloneStyleFrom(source);
-        cloned.setQuotePrefixed(true);
-        return cloned;
-    }
-
-    /**
-     * 创建仅含 quotePrefix=true 的空样式。
-     */
-    private XSSFCellStyle createQuotePrefixStyle(XSSFCell poiCell) {
-        XSSFWorkbook wb = poiCell.getSheet().getWorkbook();
-        XSSFCellStyle style = wb.createCellStyle();
-        style.setQuotePrefixed(true);
-        return style;
     }
 
     // ============================================================

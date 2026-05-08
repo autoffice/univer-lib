@@ -129,7 +129,10 @@ public final class StyleConverter {
     /**
      * IStyleData → XSSFCellStyle，附带 quotePrefix=true，结果缓存。
      * FORCE_TEXT cells share a single quote-prefix variant per base style to
-     * avoid blowing up the workbook's 64K style limit.
+     * avoid blowing up the workbook's 64K style limit. The variant is built
+     * from the same applyXxx helpers directly rather than cloning the base,
+     * so a single empty-style force-text pool only contributes one extra
+     * style object to the workbook.
      */
     public XSSFCellStyle toPoiStyleWithQuotePrefix(IStyleData s) {
         IStyleData src = s == null ? new IStyleData() : s;
@@ -138,12 +141,19 @@ public final class StyleConverter {
         if (cached != null) {
             return cached;
         }
-        XSSFCellStyle base = toPoiStyle(src);
-        XSSFCellStyle cloned = wb.createCellStyle();
-        cloned.cloneStyleFrom(base);
-        cloned.setQuotePrefixed(true);
-        quotePrefixCache.put(key, cloned);
-        return cloned;
+        XSSFFont font = wb.createFont();
+        applyFont(src, font);
+        XSSFCellStyle style = wb.createCellStyle();
+        applyBackground(src, style);
+        applyBorders(src, style);
+        applyAlignment(src, style);
+        applyWrap(src, style);
+        applyRotation(src, style);
+        applyNumFmt(src, style);
+        style.setFont(font);
+        style.setQuotePrefixed(true);
+        quotePrefixCache.put(key, style);
+        return style;
     }
 
     // ============================================================
