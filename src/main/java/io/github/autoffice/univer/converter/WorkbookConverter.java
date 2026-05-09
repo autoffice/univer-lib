@@ -28,6 +28,10 @@ public final class WorkbookConverter {
 
     /** Univer 条件格式插件名 / Univer conditional formatting plugin resource name. */
     private static final String CF_PLUGIN_NAME = "SHEET_CONDITIONAL_FORMATTING_PLUGIN";
+    /** Univer 单元格批注插件名 / Univer cell note plugin resource name. */
+    private static final String NOTE_PLUGIN_NAME = "SHEET_NOTE_PLUGIN";
+    /** Univer 图片/drawing 插件名 / Univer drawing plugin resource name. */
+    private static final String DRAWING_PLUGIN_NAME = "SHEET_DRAWING_PLUGIN";
 
     private final UniverXlsxOptions opts;
 
@@ -53,7 +57,11 @@ public final class WorkbookConverter {
                 : new ArrayList<>(src.getSheets().keySet());
 
         // 条件格式：按 sheetId 分桶，写入时回填
-        Map<String, JsonNode> cfBySheetId = extractCfFromResources(src);
+        Map<String, JsonNode> cfBySheetId = extractResourceBySheetId(src, CF_PLUGIN_NAME);
+        // 单元格批注：同样按 sheetId 分桶；每个 sheet 对应 {row:{col:note}} 对象
+        Map<String, JsonNode> notesBySheetId = extractResourceBySheetId(src, NOTE_PLUGIN_NAME);
+        // 图片：每个 sheet 对应 {data:{drawingId:image},order:[drawingId]}
+        Map<String, JsonNode> drawingsBySheetId = extractResourceBySheetId(src, DRAWING_PLUGIN_NAME);
 
         // 建立 sheetId -> 实际写入的 XSSFSheet 映射，便于最终写 CF
         Map<String, XSSFSheet> sheetIdToXssf = new LinkedHashMap<>();
@@ -82,6 +90,24 @@ public final class WorkbookConverter {
                 XSSFSheet sh = sheetIdToXssf.get(e.getKey());
                 if (sh != null) {
                     ConditionalFormattingConverter.writeSheetCF(sh, e.getValue());
+                }
+            }
+        }
+        // 回写单元格批注
+        if (!notesBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : notesBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    CommentConverter.writeSheetComments(sh, e.getValue());
+                }
+            }
+        }
+        // 回写图片
+        if (!drawingsBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : drawingsBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    PictureConverter.writeSheetPictures(sh, e.getValue());
                 }
             }
         }
@@ -118,6 +144,11 @@ public final class WorkbookConverter {
         ObjectMapper mapper = JsonMapper.get();
         // Univer CF 插件期望按 sheetId 分组的规则数组
         ObjectNode cfBySheetId = mapper.createObjectNode();
+        // Univer Note 插件期望 {sheetId: {row: {col: ISheetNote}}} 嵌套结构
+        ObjectNode notesBySheetId = mapper.createObjectNode();
+        // Univer Drawing 插件期望 {sheetId: {data:{drawingId:image}, order:[drawingId]}}
+        ObjectNode drawingsBySheetId = mapper.createObjectNode();
+        String unitId = out.getId();
         for (int i = 0; i < wb.getNumberOfSheets(); i++) {
             XSSFSheet sheet = wb.getSheetAt(i);
             String sheetName = sheet.getSheetName();
@@ -142,10 +173,29 @@ public final class WorkbookConverter {
             if (cfRules.size() > 0) {
                 cfBySheetId.set(sid, cfRules);
             }
+            // 收集单元格批注
+            ObjectNode noteMap = CommentConverter.readSheetComments(sheet, mapper);
+            if (noteMap.size() > 0) {
+                notesBySheetId.set(sid, noteMap);
+            }
+            // 收集浮动图片
+            ObjectNode pictureMap = PictureConverter.readSheetPictures(sheet, mapper,
+                    unitId == null ? "" : unitId, sid);
+            if (pictureMap.path("data").size() > 0) {
+                drawingsBySheetId.set(sid, pictureMap);
+            }
         }
         // 合并 / 追加 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源
         if (cfBySheetId.size() > 0) {
-            mergeCfResource(out, cfBySheetId, mapper);
+            mergeResourceBySheetId(out, CF_PLUGIN_NAME, cfBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_NOTE_PLUGIN 资源
+        if (notesBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, NOTE_PLUGIN_NAME, notesBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_DRAWING_PLUGIN 资源
+        if (drawingsBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, DRAWING_PLUGIN_NAME, drawingsBySheetId, mapper);
         }
         if (out.getSheetOrder() == null || out.getSheetOrder().isEmpty()) {
             out.setSheetOrder(order);
@@ -265,16 +315,17 @@ public final class WorkbookConverter {
     }
 
     // ============================================================
-    // Conditional Formatting plugin resource helpers
+    // Plugin resource helpers (SHEET_CONDITIONAL_FORMATTING_PLUGIN / SHEET_NOTE_PLUGIN / ...)
     // ============================================================
 
     /**
-     * 从 src.resources 中抽取 {@code SHEET_CONDITIONAL_FORMATTING_PLUGIN} 的规则表。
+     * 从 {@code src.resources} 中抽取指定插件资源的 per-sheet 数据（{@code {sheetId: ...}}）。
      * <p>resources 在反序列化后常为 {@code List<Map<String,Object>>}，data 字段是 JSON 字符串
      * 或已被二次反序列化成 {@code Map}；两种情况都要兼容。
+     * <p>Extract per-sheet data for a plugin resource; works for any {sheetId: payload} schema.
      */
     @SuppressWarnings("unchecked")
-    private Map<String, JsonNode> extractCfFromResources(IWorkbookData src) {
+    private Map<String, JsonNode> extractResourceBySheetId(IWorkbookData src, String pluginName) {
         Map<String, JsonNode> result = new LinkedHashMap<>();
         Object res = src.getResources();
         if (!(res instanceof List)) {
@@ -286,7 +337,7 @@ public final class WorkbookConverter {
                 continue;
             }
             Map<String, Object> entry = (Map<String, Object>) item;
-            if (!CF_PLUGIN_NAME.equals(String.valueOf(entry.get("name")))) {
+            if (!pluginName.equals(String.valueOf(entry.get("name")))) {
                 continue;
             }
             Object data = entry.get("data");
@@ -310,7 +361,7 @@ public final class WorkbookConverter {
                 continue;
             }
             bySheet.fields().forEachRemaining(f -> {
-                if (f.getValue() != null && f.getValue().isArray()) {
+                if (f.getValue() != null && !f.getValue().isNull()) {
                     result.put(f.getKey(), f.getValue());
                 }
             });
@@ -319,11 +370,12 @@ public final class WorkbookConverter {
     }
 
     /**
-     * 合并 / 追加 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源项。
-     * <p>若已存在同名资源，把新规则按 sheetId 合并进原 data；否则新增一条。
+     * 合并 / 追加 plugin 资源项；若已存在同名资源，把新值按 sheetId 合并进原 data，否则新增一条。
+     * Merge or append a plugin resource entry keyed by {@code pluginName}.
      */
     @SuppressWarnings("unchecked")
-    private void mergeCfResource(IWorkbookData out, ObjectNode cfBySheetId, ObjectMapper mapper) {
+    private void mergeResourceBySheetId(IWorkbookData out, String pluginName,
+                                        ObjectNode bySheetId, ObjectMapper mapper) {
         List<Object> resources;
         Object existingRes = out.getResources();
         if (existingRes instanceof List) {
@@ -336,7 +388,7 @@ public final class WorkbookConverter {
         for (Object item : resources) {
             if (item instanceof Map) {
                 Map<String, Object> m = (Map<String, Object>) item;
-                if (CF_PLUGIN_NAME.equals(String.valueOf(m.get("name")))) {
+                if (pluginName.equals(String.valueOf(m.get("name")))) {
                     target = m;
                     break;
                 }
@@ -359,7 +411,7 @@ public final class WorkbookConverter {
                 // 坏数据直接忽略
             }
         }
-        cfBySheetId.fields().forEachRemaining(f -> merged.set(f.getKey(), f.getValue()));
+        bySheetId.fields().forEachRemaining(f -> merged.set(f.getKey(), f.getValue()));
 
         try {
             String dataStr = mapper.writeValueAsString(merged);
@@ -367,7 +419,7 @@ public final class WorkbookConverter {
                 target.put("data", dataStr);
             } else {
                 Map<String, Object> entry = new LinkedHashMap<>();
-                entry.put("name", CF_PLUGIN_NAME);
+                entry.put("name", pluginName);
                 entry.put("data", dataStr);
                 resources.add(entry);
             }

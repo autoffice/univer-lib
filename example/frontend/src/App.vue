@@ -4,7 +4,16 @@ import type { FUniver, Univer } from '@univerjs/presets'
 import { createUniver, LocaleType, mergeLocales } from '@univerjs/presets'
 import { UniverSheetsCorePreset } from '@univerjs/preset-sheets-core'
 import UniverPresetSheetsCoreZhCN from '@univerjs/preset-sheets-core/locales/zh-CN'
+import { UniverSheetsConditionalFormattingPreset } from '@univerjs/preset-sheets-conditional-formatting'
+import UniverPresetSheetsConditionalFormattingZhCN from '@univerjs/preset-sheets-conditional-formatting/locales/zh-CN'
+import { UniverSheetsNotePreset } from '@univerjs/preset-sheets-note'
+import UniverPresetSheetsNoteZhCN from '@univerjs/preset-sheets-note/locales/zh-CN'
+import { UniverSheetsDrawingPreset } from '@univerjs/preset-sheets-drawing'
+import UniverPresetSheetsDrawingZhCN from '@univerjs/preset-sheets-drawing/locales/zh-CN'
 import '@univerjs/preset-sheets-core/lib/index.css'
+import '@univerjs/preset-sheets-conditional-formatting/lib/index.css'
+import '@univerjs/preset-sheets-note/lib/index.css'
+import '@univerjs/preset-sheets-drawing/lib/index.css'
 
 const container = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -18,10 +27,18 @@ function initUniver() {
   const { univer, univerAPI } = createUniver({
     locale: LocaleType.ZH_CN,
     locales: {
-      [LocaleType.ZH_CN]: mergeLocales(UniverPresetSheetsCoreZhCN),
+      [LocaleType.ZH_CN]: mergeLocales(
+        UniverPresetSheetsCoreZhCN,
+        UniverPresetSheetsConditionalFormattingZhCN,
+        UniverPresetSheetsNoteZhCN,
+        UniverPresetSheetsDrawingZhCN,
+      ),
     },
     presets: [
       UniverSheetsCorePreset({ container: container.value as HTMLElement }),
+      UniverSheetsConditionalFormattingPreset(),
+      UniverSheetsNotePreset(),
+      UniverSheetsDrawingPreset(),
     ],
   })
   univerInstance = univer
