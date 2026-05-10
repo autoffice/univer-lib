@@ -46,6 +46,8 @@ public final class WorkbookConverter {
     private static final String FILTER_PLUGIN_NAME = FilterConverter.PLUGIN_NAME;
     /** Univer 表格（ListObject）插件名 / Univer sheet table plugin resource name. */
     private static final String TABLE_PLUGIN_NAME = TableConverter.PLUGIN_NAME;
+    /** Univer 定义名称插件名 / Univer defined name plugin resource name (workbook-level). */
+    private static final String DEFINED_NAME_PLUGIN_NAME = DefinedNameConverter.PLUGIN_NAME;
 
     private final UniverXlsxOptions opts;
 
@@ -90,6 +92,8 @@ public final class WorkbookConverter {
         Map<String, JsonNode> filtersBySheetId = extractResourceBySheetId(src, FILTER_PLUGIN_NAME);
         // 表格（ListObject）：每个 sheet 对应 {tableId: tablePayload}
         Map<String, JsonNode> tablesBySheetId = extractResourceBySheetId(src, TABLE_PLUGIN_NAME);
+        // 定义名称：workbook-level 扁平 map {id: IDefinedNamesServiceParam}
+        JsonNode definedNamesNode = extractWorkbookResource(src, DEFINED_NAME_PLUGIN_NAME);
 
         // 建立 sheetId -> 实际写入的 XSSFSheet 映射，便于最终写 CF
         Map<String, XSSFSheet> sheetIdToXssf = new LinkedHashMap<>();
@@ -219,6 +223,10 @@ public final class WorkbookConverter {
                     TableConverter.writeSheetTables(sh, e.getValue());
                 }
             }
+        }
+        // 回写定义名称（workbook-level）：所有 sheet 创建完成后才安全，因为 localSheetId 需要按 sheetName 定位
+        if (definedNamesNode != null && definedNamesNode.isObject() && definedNamesNode.size() > 0) {
+            DefinedNameConverter.writeWorkbookDefinedNames(wb, definedNamesNode);
         }
         return wb;
     }
@@ -393,6 +401,11 @@ public final class WorkbookConverter {
         // 合并 / 追加 SHEET_TABLE_PLUGIN 资源
         if (tablesBySheetId.size() > 0) {
             mergeResourceBySheetId(out, TABLE_PLUGIN_NAME, tablesBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_DEFINED_NAME_PLUGIN 资源（workbook-level）
+        ObjectNode definedNames = DefinedNameConverter.readWorkbookDefinedNames(wb, mapper);
+        if (definedNames.size() > 0) {
+            mergeWorkbookResource(out, DEFINED_NAME_PLUGIN_NAME, definedNames, mapper);
         }
         if (out.getSheetOrder() == null || out.getSheetOrder().isEmpty()) {
             out.setSheetOrder(order);
@@ -610,6 +623,103 @@ public final class WorkbookConverter {
         }
         bySheetId.fields().forEachRemaining(f -> merged.set(f.getKey(), f.getValue()));
 
+        try {
+            String dataStr = mapper.writeValueAsString(merged);
+            if (target != null) {
+                target.put("data", dataStr);
+            } else {
+                Map<String, Object> entry = new LinkedHashMap<>();
+                entry.put("name", pluginName);
+                entry.put("data", dataStr);
+                resources.add(entry);
+            }
+        } catch (Exception ignored) {
+            return;
+        }
+        out.setResources(resources);
+    }
+
+    /**
+     * 从 {@code src.resources} 中抽取 workbook-level 资源（非 sheetId 分桶），如 defined names。
+     * Extract workbook-level resource payload (no sheetId bucketing) such as defined names.
+     */
+    @SuppressWarnings("unchecked")
+    private JsonNode extractWorkbookResource(IWorkbookData src, String pluginName) {
+        Object res = src.getResources();
+        if (!(res instanceof List)) {
+            return null;
+        }
+        ObjectMapper mapper = JsonMapper.get();
+        for (Object item : (List<Object>) res) {
+            if (!(item instanceof Map)) {
+                continue;
+            }
+            Map<String, Object> entry = (Map<String, Object>) item;
+            if (!pluginName.equals(String.valueOf(entry.get("name")))) {
+                continue;
+            }
+            Object data = entry.get("data");
+            try {
+                if (data instanceof String) {
+                    String str = ((String) data).trim();
+                    if (str.isEmpty()) {
+                        return null;
+                    }
+                    return mapper.readTree(str);
+                }
+                if (data != null) {
+                    return mapper.valueToTree(data);
+                }
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 合并 / 追加 workbook-level 资源；语义上 POI 读出的条目会按 key 覆盖 sidecar 同 key 条目，
+     * 其它 key 保持原样。
+     * Merge or append a workbook-level resource (non-sheetId bucketed).
+     */
+    @SuppressWarnings("unchecked")
+    private void mergeWorkbookResource(IWorkbookData out, String pluginName,
+                                       ObjectNode payload, ObjectMapper mapper) {
+        List<Object> resources;
+        Object existingRes = out.getResources();
+        if (existingRes instanceof List) {
+            resources = (List<Object>) existingRes;
+        } else {
+            resources = new ArrayList<>();
+        }
+        Map<String, Object> target = null;
+        for (Object item : resources) {
+            if (item instanceof Map) {
+                Map<String, Object> m = (Map<String, Object>) item;
+                if (pluginName.equals(String.valueOf(m.get("name")))) {
+                    target = m;
+                    break;
+                }
+            }
+        }
+        ObjectNode merged = mapper.createObjectNode();
+        if (target != null) {
+            Object data = target.get("data");
+            try {
+                JsonNode existing = null;
+                if (data instanceof String && !((String) data).trim().isEmpty()) {
+                    existing = mapper.readTree((String) data);
+                } else if (data != null) {
+                    existing = mapper.valueToTree(data);
+                }
+                if (existing != null && existing.isObject()) {
+                    existing.fields().forEachRemaining(f -> merged.set(f.getKey(), f.getValue()));
+                }
+            } catch (Exception ignored) {
+                // 坏数据忽略
+            }
+        }
+        payload.fields().forEachRemaining(f -> merged.set(f.getKey(), f.getValue()));
         try {
             String dataStr = mapper.writeValueAsString(merged);
             if (target != null) {
