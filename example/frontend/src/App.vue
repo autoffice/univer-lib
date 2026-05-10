@@ -10,10 +10,22 @@ import { UniverSheetsNotePreset } from '@univerjs/preset-sheets-note'
 import UniverPresetSheetsNoteZhCN from '@univerjs/preset-sheets-note/locales/zh-CN'
 import { UniverSheetsDrawingPreset } from '@univerjs/preset-sheets-drawing'
 import UniverPresetSheetsDrawingZhCN from '@univerjs/preset-sheets-drawing/locales/zh-CN'
+import { UniverSheetsHyperLinkPreset } from '@univerjs/preset-sheets-hyper-link'
+import UniverPresetSheetsHyperLinkZhCN from '@univerjs/preset-sheets-hyper-link/locales/zh-CN'
+import { UniverSheetsDataValidationPreset } from '@univerjs/preset-sheets-data-validation'
+import UniverPresetSheetsDataValidationZhCN from '@univerjs/preset-sheets-data-validation/locales/zh-CN'
+import { UniverSheetsFilterPreset } from '@univerjs/preset-sheets-filter'
+import UniverPresetSheetsFilterZhCN from '@univerjs/preset-sheets-filter/locales/zh-CN'
+import { UniverSheetsTablePreset } from '@univerjs/preset-sheets-table'
+import UniverPresetSheetsTableZhCN from '@univerjs/preset-sheets-table/locales/zh-CN'
 import '@univerjs/preset-sheets-core/lib/index.css'
 import '@univerjs/preset-sheets-conditional-formatting/lib/index.css'
 import '@univerjs/preset-sheets-note/lib/index.css'
 import '@univerjs/preset-sheets-drawing/lib/index.css'
+import '@univerjs/preset-sheets-hyper-link/lib/index.css'
+import '@univerjs/preset-sheets-data-validation/lib/index.css'
+import '@univerjs/preset-sheets-filter/lib/index.css'
+import '@univerjs/preset-sheets-table/lib/index.css'
 
 const container = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -32,6 +44,10 @@ function initUniver() {
         UniverPresetSheetsConditionalFormattingZhCN,
         UniverPresetSheetsNoteZhCN,
         UniverPresetSheetsDrawingZhCN,
+        UniverPresetSheetsHyperLinkZhCN,
+        UniverPresetSheetsDataValidationZhCN,
+        UniverPresetSheetsFilterZhCN,
+        UniverPresetSheetsTableZhCN,
       ),
     },
     presets: [
@@ -39,6 +55,10 @@ function initUniver() {
       UniverSheetsConditionalFormattingPreset(),
       UniverSheetsNotePreset(),
       UniverSheetsDrawingPreset(),
+      UniverSheetsHyperLinkPreset(),
+      UniverSheetsDataValidationPreset(),
+      UniverSheetsFilterPreset(),
+      UniverSheetsTablePreset(),
     ],
   })
   univerInstance = univer
