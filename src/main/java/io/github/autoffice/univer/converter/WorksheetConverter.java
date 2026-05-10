@@ -4,25 +4,34 @@ import io.github.autoffice.univer.UniverXlsxOptions;
 import io.github.autoffice.univer.model.BooleanNumber;
 import io.github.autoffice.univer.model.ICellData;
 import io.github.autoffice.univer.model.IColumnData;
+import io.github.autoffice.univer.model.IDocumentData;
 import io.github.autoffice.univer.model.IFreeze;
 import io.github.autoffice.univer.model.IRange;
 import io.github.autoffice.univer.model.IRowData;
 import io.github.autoffice.univer.model.IWorksheetData;
 import io.github.autoffice.univer.util.ColorUtils;
 import io.github.autoffice.univer.util.LengthUtils;
+import org.apache.poi.common.usermodel.HyperlinkType;
 import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.CreationHelper;
+import org.apache.poi.ss.usermodel.Hyperlink;
 import org.apache.poi.ss.util.CellRangeAddress;
 import org.apache.poi.ss.util.PaneInformation;
 import org.apache.poi.xssf.usermodel.XSSFCell;
 import org.apache.poi.xssf.usermodel.XSSFColor;
+import org.apache.poi.xssf.usermodel.XSSFHyperlink;
 import org.apache.poi.xssf.usermodel.XSSFRichTextString;
 import org.apache.poi.xssf.usermodel.XSSFRow;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 工作表转换器：在 IWorksheetData 与 POI XSSFSheet 之间双向映射。
@@ -33,6 +42,13 @@ import java.util.Map;
  */
 public final class WorksheetConverter {
 
+    private static final Logger LOG = Logger.getLogger(WorksheetConverter.class.getName());
+
+    /** Univer 内部超链接格式：#gid=<sheetId>&range=<a1> / Univer internal hyperlink url shape. */
+    private static final Pattern GID_PATTERN = Pattern.compile("^#gid=([^&]+)(?:&range=(.+))?$");
+    /** xlsx 原生内部超链接格式：[quoted]sheet!range / xlsx native internal hyperlink shape. */
+    private static final Pattern SHEET_REF_PATTERN = Pattern.compile("^'?(.+?)'?!(.+)$");
+
     private final XSSFWorkbook wb;
     private final StyleConverter styles;
     private final CellConverter cells;
@@ -40,6 +56,11 @@ public final class WorksheetConverter {
     private final SharedFormulaRegistry formulas;
     @SuppressWarnings("unused")
     private final UniverXlsxOptions opts;
+
+    /** sheetId → sheetName（写路径使用，解析 #gid=...）。 */
+    private Map<String, String> sheetIdToName = Collections.emptyMap();
+    /** sheetName → sheetId（读路径使用，生成 #gid=...）。 */
+    private Map<String, String> sheetNameToId = Collections.emptyMap();
 
     public WorksheetConverter(XSSFWorkbook wb,
                               StyleConverter styles,
@@ -53,6 +74,16 @@ public final class WorksheetConverter {
         this.rich = rich;
         this.formulas = formulas;
         this.opts = opts;
+    }
+
+    /**
+     * 注入跨 sheet 超链接解析所需的映射。
+     * Provide cross-sheet maps used to translate Univer {@code #gid=} URLs to xlsx
+     * {@code Sheet!A1} style references, and vice versa.
+     */
+    public void setSheetIdMaps(Map<String, String> sheetIdToName, Map<String, String> sheetNameToId) {
+        this.sheetIdToName = sheetIdToName == null ? Collections.emptyMap() : sheetIdToName;
+        this.sheetNameToId = sheetNameToId == null ? Collections.emptyMap() : sheetNameToId;
     }
 
     // ============================================================
@@ -141,6 +172,7 @@ public final class WorksheetConverter {
                     XSSFRichTextString rts = rich.toPoi(cellData.getP());
                     cell.setCellValue(rts);
                     applyStyleOnly(cell, cellData);
+                    applyHyperlinkFromDoc(cell, cellData.getP());
                 } else if (cellData.getF() != null && cellData.getSi() != null) {
                     // 共享公式 / shared formula — 登记到 registry，由其 apply 时统一写入
                     formulas.registerWrite(sheetIndex, rowIdx, colIdx, cellData.getSi(), cellData.getF());
@@ -358,6 +390,12 @@ public final class WorksheetConverter {
                         data.setP(rich.fromPoi(rts));
                     }
                 }
+                // 单元格级 hyperlink → IDocumentData.customRanges
+                // Cell-level hyperlink → IDocumentData.customRanges
+                XSSFHyperlink link = xCell.getHyperlink();
+                if (link != null) {
+                    applyHyperlinkToData(data, xCell, link);
+                }
                 // 公式：追加 si / formula: attach si
                 if (xCell.getCellType() == CellType.FORMULA && data.getF() != null) {
                     String si = formulas.registerRead(sheetIndex, rowIdx, colIdx, data.getF());
@@ -435,5 +473,135 @@ public final class WorksheetConverter {
                 .setStartRow((int) info.getHorizontalSplitTopRow())
                 .setStartColumn((int) info.getVerticalSplitLeftColumn());
         dst.setFreeze(f);
+    }
+
+    // ============================================================
+    // 超链接 / Hyperlinks
+    // ============================================================
+
+    /**
+     * 将 IDocumentData.body.customRanges 中的第一个超链接应用到 xlsx 单元格。
+     * xlsx 一个单元格只能承载一个 hyperlink；多链接富文本靠 sidecar 的 p 继续保真。
+     * Apply the first customRange hyperlink (if any) to the xlsx cell. xlsx only allows a single
+     * cell-level hyperlink; multi-link rich text is still preserved losslessly through the sidecar.
+     */
+    private void applyHyperlinkFromDoc(XSSFCell cell, IDocumentData doc) {
+        String url = RichTextConverter.firstHyperlinkUrl(doc);
+        if (url == null) {
+            return;
+        }
+        HyperlinkType type = detectHyperlinkType(url);
+        String address = translateUrlForXlsx(url, type);
+        if (address == null || address.isEmpty()) {
+            return;
+        }
+        try {
+            CreationHelper helper = wb.getCreationHelper();
+            Hyperlink h = helper.createHyperlink(type);
+            h.setAddress(address);
+            cell.setHyperlink(h);
+        } catch (IllegalArgumentException e) {
+            // Address 解析失败：降级为 sidecar-only 保留；不要中断整体写入
+            LOG.fine("skip invalid hyperlink address: " + address + " (" + e.getMessage() + ")");
+        }
+    }
+
+    /** 把 xlsx cell.hyperlink 合并回 ICellData（生成或补齐 body.customRanges）。 */
+    private void applyHyperlinkToData(ICellData data, XSSFCell xCell, XSSFHyperlink link) {
+        String url = translateUrlFromXlsx(link, xCell.getSheet());
+        if (url == null) {
+            return;
+        }
+        IDocumentData doc = data.getP();
+        if (doc == null) {
+            doc = rich.fromPoi(xCell.getRichStringCellValue());
+            data.setP(doc);
+        }
+        // 如已通过 sidecar 携带同 url 的 customRange，则不再重复追加
+        String existing = RichTextConverter.firstHyperlinkUrl(doc);
+        if (url.equals(existing)) {
+            return;
+        }
+        String plain = plainTextOf(doc);
+        int end = plain == null ? 0 : plain.length();
+        RichTextConverter.attachHyperlink(doc, url, 0, end);
+    }
+
+    private static String plainTextOf(IDocumentData doc) {
+        if (doc == null || doc.getBody() == null || doc.getBody().getDataStream() == null) {
+            return "";
+        }
+        String s = doc.getBody().getDataStream();
+        return s.endsWith("\r\n") ? s.substring(0, s.length() - 2) : s;
+    }
+
+    private static HyperlinkType detectHyperlinkType(String url) {
+        if (url == null) {
+            return HyperlinkType.NONE;
+        }
+        if (url.startsWith("#")) {
+            return HyperlinkType.DOCUMENT;
+        }
+        String lower = url.toLowerCase();
+        if (lower.startsWith("mailto:") || (url.contains("@") && !lower.startsWith("http"))) {
+            return HyperlinkType.EMAIL;
+        }
+        if (lower.startsWith("file:") || lower.startsWith("file://")) {
+            return HyperlinkType.FILE;
+        }
+        return HyperlinkType.URL;
+    }
+
+    /** Univer URL → xlsx hyperlink address。内部 #gid= 会被翻译成 'Sheet'!A1 形式。 */
+    private String translateUrlForXlsx(String url, HyperlinkType type) {
+        if (type != HyperlinkType.DOCUMENT) {
+            return url;
+        }
+        if (url.startsWith("#gid=")) {
+            Matcher m = GID_PATTERN.matcher(url);
+            if (m.matches()) {
+                String sheetId = m.group(1);
+                String range = m.group(2);
+                String name = sheetIdToName.get(sheetId);
+                if (name != null) {
+                    String safe = name.replace("'", "''");
+                    String target = range == null || range.isEmpty() ? "A1" : range;
+                    return "'" + safe + "'!" + target;
+                }
+            }
+            // 未匹配到 sheet 映射，保留原值；部分消费方（本库自己）可直接识别 #gid=。
+            return url.substring(1);
+        }
+        // 已是 xlsx 原生格式（#Sheet!A1 或 #rangeid=...），去掉前导 '#'
+        return url.startsWith("#") ? url.substring(1) : url;
+    }
+
+    /** xlsx hyperlink → Univer URL。内部 Sheet!A1 会被翻译回 #gid=...&range=...。 */
+    private String translateUrlFromXlsx(XSSFHyperlink link, XSSFSheet currentSheet) {
+        String address = link.getAddress();
+        if (address == null || address.isEmpty()) {
+            address = link.getLocation();
+        }
+        if (address == null || address.isEmpty()) {
+            return null;
+        }
+        HyperlinkType t = link.getType();
+        if (t != HyperlinkType.DOCUMENT) {
+            return address;
+        }
+        Matcher m = SHEET_REF_PATTERN.matcher(address);
+        if (m.matches()) {
+            String rawName = m.group(1).replace("''", "'");
+            String range = m.group(2);
+            String sid = sheetNameToId.get(rawName);
+            if (sid == null && currentSheet != null && rawName.equals(currentSheet.getSheetName())) {
+                sid = sheetNameToId.getOrDefault(rawName, rawName);
+            }
+            if (sid != null) {
+                return "#gid=" + sid + (range == null || range.isEmpty() ? "" : "&range=" + range);
+            }
+        }
+        // 未知内部格式，保留原串前加 '#' 以符合 Univer 约定
+        return "#" + address;
     }
 }

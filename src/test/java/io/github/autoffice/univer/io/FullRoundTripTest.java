@@ -17,6 +17,9 @@ import io.github.autoffice.univer.model.ITextDecoration;
 import io.github.autoffice.univer.model.ITextRotation;
 import io.github.autoffice.univer.model.IWorkbookData;
 import io.github.autoffice.univer.model.IWorksheetData;
+import org.apache.poi.ss.SpreadsheetVersion;
+import org.apache.poi.ss.util.AreaReference;
+import org.apache.poi.ss.util.CellReference;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
@@ -349,6 +352,43 @@ class FullRoundTripTest {
     // ============================================================
     // 8. cell custom field
     // ============================================================
+
+    @Test
+    void should_roundtrip_pivot_table_resources() throws Exception {
+        byte[] bytes;
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet source = wb.createSheet("Source");
+            source.createRow(0).createCell(0).setCellValue("Region");
+            source.getRow(0).createCell(1).setCellValue("Amount");
+            source.createRow(1).createCell(0).setCellValue("East");
+            source.getRow(1).createCell(1).setCellValue(10);
+            source.createRow(2).createCell(0).setCellValue("West");
+            source.getRow(2).createCell(1).setCellValue(20);
+            XSSFSheet pivotSheet = wb.createSheet("Pivot");
+            pivotSheet.createPivotTable(new AreaReference("A1:B3", SpreadsheetVersion.EXCEL2007),
+                    new CellReference(0, 0), source);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            wb.write(out);
+            bytes = out.toByteArray();
+        }
+
+        IWorkbookData data = UniverXlsx.read(new ByteArrayInputStream(bytes));
+        assertThat(data.getResources()).isInstanceOf(List.class);
+        @SuppressWarnings("unchecked")
+        List<Object> resources = (List<Object>) data.getResources();
+        Object pivotEntry = resources.stream()
+                .filter(v -> v instanceof Map)
+                .map(v -> (Map<?, ?>) v)
+                .filter(v -> "SHEET_PIVOT_TABLE_PLUGIN".equals(String.valueOf(v.get("name"))))
+                .findFirst()
+                .orElse(null);
+        assertThat(pivotEntry).isNotNull();
+
+        byte[] roundTripped = writeBytes(data);
+        try (XSSFWorkbook wb = new XSSFWorkbook(new ByteArrayInputStream(roundTripped))) {
+            assertThat(wb.getSheet("Pivot").getPivotTables()).isNotEmpty();
+        }
+    }
 
     @Test
     void should_roundtrip_cell_custom_field() throws Exception {

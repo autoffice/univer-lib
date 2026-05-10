@@ -13,13 +13,28 @@ import org.apache.poi.xssf.usermodel.XSSFRichTextString;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * 富文本转换器。
  * Rich text converter between IDocumentData and XSSFRichTextString.
+ * <p>
+ * 超链接通过 {@code IDocumentData.Body.customRanges} 表达；模型未定义该字段，
+ * 这里通过 {@link io.github.autoffice.univer.model.AbstractUniverModel#putExtra} 写入 extras，
+ * Jackson 会把它平铺回 body，与 Univer TS 侧结构一致。
+ * Hyperlinks are expressed via {@code IDocumentData.Body.customRanges}. The POJO does not declare
+ * the field; this converter writes it through {@code extras} so Jackson emits it at the body level
+ * (Univer TS shape).
  */
 public final class RichTextConverter {
+
+    /** body.customRanges 字段名 / field name for customRanges on body. */
+    public static final String CUSTOM_RANGES_KEY = "customRanges";
+    /** rangeType = 0 表示超链接 / rangeType 0 = hyperlink. */
+    public static final int RANGE_TYPE_HYPERLINK = 0;
 
     /** 承载 POI 工作簿的引用，用于创建字体 / workbook reference for font creation. */
     private final XSSFWorkbook wb;
@@ -205,5 +220,79 @@ public final class RichTextConverter {
             }
         }
         return ts;
+    }
+
+    // ============================================================
+    // 超链接辅助 / Hyperlink helpers
+    // ============================================================
+
+    /**
+     * 读取 {@code body.customRanges} 列表；若不存在则返回空列表。
+     * Read {@code body.customRanges} from extras; return empty list if absent.
+     */
+    @SuppressWarnings("unchecked")
+    public static List<Map<String, Object>> customRangesOf(IDocumentData p) {
+        if (p == null || p.getBody() == null) {
+            return new ArrayList<>();
+        }
+        Object raw = p.getBody().getExtras().get(CUSTOM_RANGES_KEY);
+        if (raw instanceof List) {
+            return (List<Map<String, Object>>) raw;
+        }
+        return new ArrayList<>();
+    }
+
+    /**
+     * 返回文档中第一个超链接 custom range 的 url（没有则返回 null）。
+     * Return the url of the first hyperlink custom range, or null if none exists.
+     */
+    public static String firstHyperlinkUrl(IDocumentData p) {
+        for (Map<String, Object> range : customRangesOf(p)) {
+            Object rt = range.get("rangeType");
+            if (rt instanceof Number && ((Number) rt).intValue() != RANGE_TYPE_HYPERLINK) {
+                continue;
+            }
+            Object props = range.get("properties");
+            if (props instanceof Map) {
+                Object url = ((Map<String, Object>) props).get("url");
+                if (url instanceof String && !((String) url).isEmpty()) {
+                    return (String) url;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 在 body.customRanges 上追加一段超链接 range；若列表不存在则创建。
+     * 起止索引按照 Univer dataStream 约定（"\r\n" 段落终止符），范围闭区间。
+     * Append a hyperlink custom range to body.customRanges (create list if absent). Indices follow
+     * Univer dataStream convention (end-exclusive style used in showcase payloads).
+     */
+    @SuppressWarnings("unchecked")
+    public static void attachHyperlink(IDocumentData p, String url, int startIndex, int endIndex) {
+        if (p == null || p.getBody() == null || url == null || url.isEmpty()) {
+            return;
+        }
+        Map<String, Object> extras = p.getBody().getExtras();
+        Object raw = extras.get(CUSTOM_RANGES_KEY);
+        List<Map<String, Object>> ranges;
+        if (raw instanceof List) {
+            ranges = (List<Map<String, Object>>) raw;
+        } else {
+            ranges = new ArrayList<>();
+            p.getBody().putExtra(CUSTOM_RANGES_KEY, ranges);
+        }
+        String rangeId = UUID.randomUUID().toString();
+        Map<String, Object> range = new LinkedHashMap<>();
+        range.put("rangeId", rangeId);
+        range.put("rangeType", RANGE_TYPE_HYPERLINK);
+        range.put("startIndex", startIndex);
+        range.put("endIndex", endIndex);
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("url", url);
+        props.put("refId", rangeId);
+        range.put("properties", props);
+        ranges.add(range);
     }
 }
