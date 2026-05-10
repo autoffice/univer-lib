@@ -37,7 +37,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -131,12 +130,9 @@ public final class PivotTableConverter {
     }
 
     private static String buildStablePivotId(String subUnitId, CTPivotTableDefinition def, int ordinal) {
-        // 使用 UUID 保证 pivotId 稳定性，不受 sheet rename 或 ordinal 变化影响。
-        // Use UUID to guarantee pivotId stability, unaffected by sheet rename or ordinal changes.
-        // 格式：sheetId-pivot-<ordinal>-<uuid>，保持可读性同时确保唯一性。
-        // Format: sheetId-pivot-<ordinal>-<uuid> for readability while ensuring uniqueness.
-        String uuid = UUID.randomUUID().toString();
-        return subUnitId + "-pivot-" + ordinal + "-" + uuid;
+        // 使用 sheetId-pivot-<ordinal> 格式保证 pivotId 稳定性，不受 sheet rename 影响。
+        // Use sheetId-pivot-<ordinal> format to guarantee pivotId stability, unaffected by sheet rename.
+        return subUnitId + "-pivot-" + ordinal;
     }
 
     private static ObjectNode buildSourceRangeInfo(XSSFWorkbook wb, XSSFPivotTable pivot,
