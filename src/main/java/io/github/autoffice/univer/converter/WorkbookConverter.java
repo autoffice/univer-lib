@@ -28,10 +28,20 @@ public final class WorkbookConverter {
 
     /** Univer 条件格式插件名 / Univer conditional formatting plugin resource name. */
     private static final String CF_PLUGIN_NAME = "SHEET_CONDITIONAL_FORMATTING_PLUGIN";
+    /** Univer 数据验证插件名 / Univer data validation plugin resource name. */
+    private static final String DV_PLUGIN_NAME = DataValidationConverter.PLUGIN_NAME;
+    /** Univer 数据透视表插件名 / Univer pivot table plugin resource name. */
+    private static final String PIVOT_PLUGIN_NAME = PivotTableConverter.PIVOT_PLUGIN_NAME;
     /** Univer 单元格批注插件名 / Univer cell note plugin resource name. */
     private static final String NOTE_PLUGIN_NAME = "SHEET_NOTE_PLUGIN";
     /** Univer 图片/drawing 插件名 / Univer drawing plugin resource name. */
     private static final String DRAWING_PLUGIN_NAME = "SHEET_DRAWING_PLUGIN";
+    /** Univer 图表插件名 / Univer chart plugin resource name. */
+    private static final String CHART_PLUGIN_NAME = "SHEET_CHART_PLUGIN";
+    /** Univer 形状插件名 / Univer shape plugin resource name. */
+    private static final String SHAPE_PLUGIN_NAME = "SHEET_SHAPE_PLUGIN";
+    /** Univer 迷你图插件名 / Univer sparkline plugin resource name. */
+    private static final String SPARKLINE_PLUGIN_NAME = "SHEET_SPARKLINE_PLUGIN";
 
     private final UniverXlsxOptions opts;
 
@@ -40,7 +50,7 @@ public final class WorkbookConverter {
     }
 
     /** 把 IWorkbookData 转为 POI 工作簿。/ Convert IWorkbookData to POI workbook. */
-    public XSSFWorkbook toXlsx(IWorkbookData src) {
+    public XSSFWorkbook toXlsx(IWorkbookData src) throws io.github.autoffice.univer.UniverXlsxUnsupportedFeatureException {
         XSSFWorkbook wb = new XSSFWorkbook();
         StyleConverter sc = new StyleConverter(wb);
         CellConverter cc = new CellConverter(sc);
@@ -58,29 +68,57 @@ public final class WorkbookConverter {
 
         // 条件格式：按 sheetId 分桶，写入时回填
         Map<String, JsonNode> cfBySheetId = extractResourceBySheetId(src, CF_PLUGIN_NAME);
+        // 数据验证：每个 sheet 对应 {ruleId: IDataValidationRule}
+        Map<String, JsonNode> dvBySheetId = extractResourceBySheetId(src, DV_PLUGIN_NAME);
+        // 透视表：每个 sheet 对应 [pivotPayload...]
+        Map<String, JsonNode> pivotBySheetId = extractResourceBySheetId(src, PIVOT_PLUGIN_NAME);
         // 单元格批注：同样按 sheetId 分桶；每个 sheet 对应 {row:{col:note}} 对象
         Map<String, JsonNode> notesBySheetId = extractResourceBySheetId(src, NOTE_PLUGIN_NAME);
         // 图片：每个 sheet 对应 {data:{drawingId:image},order:[drawingId]}
         Map<String, JsonNode> drawingsBySheetId = extractResourceBySheetId(src, DRAWING_PLUGIN_NAME);
+        // 图表：每个 sheet 对应 {data:{chartId:item},order:[chartId]}，item.rawXml 为原 OOXML CTChartSpace
+        Map<String, JsonNode> chartsBySheetId = extractResourceBySheetId(src, CHART_PLUGIN_NAME);
+        // 形状：与 drawing 插件结构一致，但走 simpleShape / connector 通道
+        Map<String, JsonNode> shapesBySheetId = extractResourceBySheetId(src, SHAPE_PLUGIN_NAME);
+        // 迷你图：保守保留原 worksheet.extLst XML，按 sheetId 分桶
+        Map<String, JsonNode> sparklinesBySheetId = extractResourceBySheetId(src, SPARKLINE_PLUGIN_NAME);
 
         // 建立 sheetId -> 实际写入的 XSSFSheet 映射，便于最终写 CF
         Map<String, XSSFSheet> sheetIdToXssf = new LinkedHashMap<>();
+        // 建立 sheetId -> 最终 sheet 名称映射，供超链接写路径翻译 #gid=<id>&range=...
+        Map<String, String> sheetIdToName = new LinkedHashMap<>();
 
+        // 第一轮：仅创建 sheet 并登记名称，确保 hyperlink 写入时所有目标 sheet 都已就位。
+        // First pass: create sheets and record names so cross-sheet hyperlinks can resolve any target.
         for (String sid : order) {
             IWorksheetData ws = src.getSheets().get(sid);
             if (ws == null) {
                 continue;
             }
-            ws = resolveStyles(src, ws);
             String sheetName = ws.getName() != null ? ws.getName() : sid;
-            // 确保工作表名唯一 / ensure unique sheet name
             sheetName = wb.getSheet(sheetName) == null ? sheetName : sheetName + "_" + sid;
             XSSFSheet sheet = wb.createSheet(sheetName);
+            sheetIdToXssf.put(sid, sheet);
+            sheetIdToName.put(sid, sheet.getSheetName());
+        }
+        wsc.setSheetIdMaps(sheetIdToName, null);
+
+        // 第二轮：实际写入内容与可见性。
+        // Second pass: write cell contents and visibility now that hyperlink targets are known.
+        for (String sid : order) {
+            IWorksheetData ws = src.getSheets().get(sid);
+            if (ws == null) {
+                continue;
+            }
+            XSSFSheet sheet = sheetIdToXssf.get(sid);
+            if (sheet == null) {
+                continue;
+            }
+            ws = resolveStyles(src, ws);
             wsc.writeSheet(sheet, ws);
             if (ws.getHidden() == BooleanNumber.TRUE) {
                 wb.setSheetVisibility(wb.getSheetIndex(sheet), SheetVisibility.HIDDEN);
             }
-            sheetIdToXssf.put(sid, sheet);
         }
         sfr.applyOnWorkbook(wb);
 
@@ -90,6 +128,24 @@ public final class WorkbookConverter {
                 XSSFSheet sh = sheetIdToXssf.get(e.getKey());
                 if (sh != null) {
                     ConditionalFormattingConverter.writeSheetCF(sh, e.getValue());
+                }
+            }
+        }
+        // 回写数据验证
+        if (!dvBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : dvBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    DataValidationConverter.writeSheetDataValidations(sh, e.getValue(), opts);
+                }
+            }
+        }
+        // 回写透视表
+        if (!pivotBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : pivotBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    PivotTableConverter.writeSheetPivotTables(wb, sh, e.getValue(), sheetIdToXssf);
                 }
             }
         }
@@ -108,6 +164,33 @@ public final class WorkbookConverter {
                 XSSFSheet sh = sheetIdToXssf.get(e.getKey());
                 if (sh != null) {
                     PictureConverter.writeSheetPictures(sh, e.getValue());
+                }
+            }
+        }
+        // 回写非图片形状（rect、connector、流程图块等）
+        if (!shapesBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : shapesBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    AdvancedDrawingConverter.writeSheetShapes(sh, e.getValue());
+                }
+            }
+        }
+        // 回写图表（基于 sidecar 中的原始 CTChartSpace XML）
+        if (!chartsBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : chartsBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    AdvancedDrawingConverter.writeSheetCharts(sh, e.getValue());
+                }
+            }
+        }
+        // 回写迷你图（worksheet.extLst 原 XML 还原）
+        if (!sparklinesBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : sparklinesBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    AdvancedDrawingConverter.writeSheetSparkline(sh, e.getValue());
                 }
             }
         }
@@ -139,15 +222,33 @@ public final class WorkbookConverter {
                 nameToId.put(v.getName(), e.getKey());
             }
         }
+        // 把 xlsx 实际 sheet 名也补进映射，让 'Sheet'!A1 形式的内部 hyperlink 能解析到 sid。
+        // Add every workbook sheet name as well, so hyperlink translation can resolve any target.
+        Map<String, String> nameToSheetId = new LinkedHashMap<>(nameToId);
+        for (int i = 0; i < wb.getNumberOfSheets(); i++) {
+            String name = wb.getSheetAt(i).getSheetName();
+            nameToSheetId.putIfAbsent(name, nameToId.getOrDefault(name, name));
+        }
+        wsc.setSheetIdMaps(null, nameToSheetId);
 
         List<String> order = new ArrayList<>();
         ObjectMapper mapper = JsonMapper.get();
         // Univer CF 插件期望按 sheetId 分组的规则数组
         ObjectNode cfBySheetId = mapper.createObjectNode();
+        // Univer Data Validation 插件期望 {sheetId: {ruleId: IDataValidationRule}}
+        ObjectNode dvBySheetId = mapper.createObjectNode();
+        // Univer Pivot 插件期望 {sheetId: [pivotPayload...]}
+        ObjectNode pivotBySheetId = mapper.createObjectNode();
         // Univer Note 插件期望 {sheetId: {row: {col: ISheetNote}}} 嵌套结构
         ObjectNode notesBySheetId = mapper.createObjectNode();
         // Univer Drawing 插件期望 {sheetId: {data:{drawingId:image}, order:[drawingId]}}
         ObjectNode drawingsBySheetId = mapper.createObjectNode();
+        // Univer Chart 插件保留原 CTChartSpace XML
+        ObjectNode chartsBySheetId = mapper.createObjectNode();
+        // Univer Shape 插件保留 simpleShape / connector 元数据
+        ObjectNode shapesBySheetId = mapper.createObjectNode();
+        // Univer Sparkline 插件保留 worksheet.extLst 原 XML
+        ObjectNode sparklinesBySheetId = mapper.createObjectNode();
         String unitId = out.getId();
         for (int i = 0; i < wb.getNumberOfSheets(); i++) {
             XSSFSheet sheet = wb.getSheetAt(i);
@@ -173,6 +274,17 @@ public final class WorkbookConverter {
             if (cfRules.size() > 0) {
                 cfBySheetId.set(sid, cfRules);
             }
+            // 收集数据验证
+            ObjectNode validations = DataValidationConverter.readSheetDataValidations(sheet, mapper);
+            if (validations.size() > 0) {
+                dvBySheetId.set(sid, validations);
+            }
+            // 收集透视表
+            ArrayNode pivotTables = PivotTableConverter.readSheetPivotTables(wb, sheet, mapper,
+                    unitId == null ? "" : unitId, sid);
+            if (pivotTables.size() > 0) {
+                pivotBySheetId.set(sid, pivotTables);
+            }
             // 收集单元格批注
             ObjectNode noteMap = CommentConverter.readSheetComments(sheet, mapper);
             if (noteMap.size() > 0) {
@@ -184,10 +296,35 @@ public final class WorkbookConverter {
             if (pictureMap.path("data").size() > 0) {
                 drawingsBySheetId.set(sid, pictureMap);
             }
+            // 收集图表
+            ObjectNode chartMap = AdvancedDrawingConverter.readSheetCharts(sheet, mapper,
+                    unitId == null ? "" : unitId, sid);
+            if (chartMap.path("data").size() > 0) {
+                chartsBySheetId.set(sid, chartMap);
+            }
+            // 收集非图片形状
+            ObjectNode shapeMap = AdvancedDrawingConverter.readSheetShapes(sheet, mapper,
+                    unitId == null ? "" : unitId, sid);
+            if (shapeMap.path("data").size() > 0) {
+                shapesBySheetId.set(sid, shapeMap);
+            }
+            // 收集迷你图：worksheet.extLst 原 XML
+            ObjectNode sparklineMap = AdvancedDrawingConverter.readSheetSparkline(sheet, mapper);
+            if (sparklineMap.size() > 0) {
+                sparklinesBySheetId.set(sid, sparklineMap);
+            }
         }
         // 合并 / 追加 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源
         if (cfBySheetId.size() > 0) {
             mergeResourceBySheetId(out, CF_PLUGIN_NAME, cfBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_DATA_VALIDATION_PLUGIN 资源
+        if (dvBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, DV_PLUGIN_NAME, dvBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_PIVOT_TABLE_PLUGIN 资源
+        if (pivotBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, PIVOT_PLUGIN_NAME, pivotBySheetId, mapper);
         }
         // 合并 / 追加 SHEET_NOTE_PLUGIN 资源
         if (notesBySheetId.size() > 0) {
@@ -196,6 +333,18 @@ public final class WorkbookConverter {
         // 合并 / 追加 SHEET_DRAWING_PLUGIN 资源
         if (drawingsBySheetId.size() > 0) {
             mergeResourceBySheetId(out, DRAWING_PLUGIN_NAME, drawingsBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_CHART_PLUGIN 资源
+        if (chartsBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, CHART_PLUGIN_NAME, chartsBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_SHAPE_PLUGIN 资源
+        if (shapesBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, SHAPE_PLUGIN_NAME, shapesBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_SPARKLINE_PLUGIN 资源
+        if (sparklinesBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, SPARKLINE_PLUGIN_NAME, sparklinesBySheetId, mapper);
         }
         if (out.getSheetOrder() == null || out.getSheetOrder().isEmpty()) {
             out.setSheetOrder(order);
