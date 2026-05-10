@@ -42,6 +42,10 @@ public final class WorkbookConverter {
     private static final String SHAPE_PLUGIN_NAME = "SHEET_SHAPE_PLUGIN";
     /** Univer 迷你图插件名 / Univer sparkline plugin resource name. */
     private static final String SPARKLINE_PLUGIN_NAME = "SHEET_SPARKLINE_PLUGIN";
+    /** Univer 自动筛选插件名 / Univer sheet auto filter plugin resource name. */
+    private static final String FILTER_PLUGIN_NAME = FilterConverter.PLUGIN_NAME;
+    /** Univer 表格（ListObject）插件名 / Univer sheet table plugin resource name. */
+    private static final String TABLE_PLUGIN_NAME = TableConverter.PLUGIN_NAME;
 
     private final UniverXlsxOptions opts;
 
@@ -82,6 +86,10 @@ public final class WorkbookConverter {
         Map<String, JsonNode> shapesBySheetId = extractResourceBySheetId(src, SHAPE_PLUGIN_NAME);
         // 迷你图：保守保留原 worksheet.extLst XML，按 sheetId 分桶
         Map<String, JsonNode> sparklinesBySheetId = extractResourceBySheetId(src, SPARKLINE_PLUGIN_NAME);
+        // 自动筛选：每个 sheet 对应 {ref, startRow, endRow, startColumn, endColumn, rawXml?}
+        Map<String, JsonNode> filtersBySheetId = extractResourceBySheetId(src, FILTER_PLUGIN_NAME);
+        // 表格（ListObject）：每个 sheet 对应 {tableId: tablePayload}
+        Map<String, JsonNode> tablesBySheetId = extractResourceBySheetId(src, TABLE_PLUGIN_NAME);
 
         // 建立 sheetId -> 实际写入的 XSSFSheet 映射，便于最终写 CF
         Map<String, XSSFSheet> sheetIdToXssf = new LinkedHashMap<>();
@@ -194,6 +202,24 @@ public final class WorkbookConverter {
                 }
             }
         }
+        // 回写自动筛选（范围 + 列级 rawXml 还原）
+        if (!filtersBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : filtersBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    FilterConverter.writeSheetFilter(sh, e.getValue());
+                }
+            }
+        }
+        // 回写表格（ListObject）：范围、列名、样式
+        if (!tablesBySheetId.isEmpty()) {
+            for (Map.Entry<String, JsonNode> e : tablesBySheetId.entrySet()) {
+                XSSFSheet sh = sheetIdToXssf.get(e.getKey());
+                if (sh != null) {
+                    TableConverter.writeSheetTables(sh, e.getValue());
+                }
+            }
+        }
         return wb;
     }
 
@@ -249,6 +275,10 @@ public final class WorkbookConverter {
         ObjectNode shapesBySheetId = mapper.createObjectNode();
         // Univer Sparkline 插件保留 worksheet.extLst 原 XML
         ObjectNode sparklinesBySheetId = mapper.createObjectNode();
+        // Univer 自动筛选插件：每个 sheet 对应 {ref,..,rawXml}
+        ObjectNode filtersBySheetId = mapper.createObjectNode();
+        // Univer 表格插件：每个 sheet 对应 {tableId: tablePayload}
+        ObjectNode tablesBySheetId = mapper.createObjectNode();
         String unitId = out.getId();
         for (int i = 0; i < wb.getNumberOfSheets(); i++) {
             XSSFSheet sheet = wb.getSheetAt(i);
@@ -313,6 +343,16 @@ public final class WorkbookConverter {
             if (sparklineMap.size() > 0) {
                 sparklinesBySheetId.set(sid, sparklineMap);
             }
+            // 收集自动筛选
+            ObjectNode filterMap = FilterConverter.readSheetFilter(sheet, mapper);
+            if (filterMap.size() > 0) {
+                filtersBySheetId.set(sid, filterMap);
+            }
+            // 收集表格
+            ObjectNode tableMap = TableConverter.readSheetTables(sheet, mapper);
+            if (tableMap.size() > 0) {
+                tablesBySheetId.set(sid, tableMap);
+            }
         }
         // 合并 / 追加 SHEET_CONDITIONAL_FORMATTING_PLUGIN 资源
         if (cfBySheetId.size() > 0) {
@@ -345,6 +385,14 @@ public final class WorkbookConverter {
         // 合并 / 追加 SHEET_SPARKLINE_PLUGIN 资源
         if (sparklinesBySheetId.size() > 0) {
             mergeResourceBySheetId(out, SPARKLINE_PLUGIN_NAME, sparklinesBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_FILTER_PLUGIN 资源
+        if (filtersBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, FILTER_PLUGIN_NAME, filtersBySheetId, mapper);
+        }
+        // 合并 / 追加 SHEET_TABLE_PLUGIN 资源
+        if (tablesBySheetId.size() > 0) {
+            mergeResourceBySheetId(out, TABLE_PLUGIN_NAME, tablesBySheetId, mapper);
         }
         if (out.getSheetOrder() == null || out.getSheetOrder().isEmpty()) {
             out.setSheetOrder(order);
