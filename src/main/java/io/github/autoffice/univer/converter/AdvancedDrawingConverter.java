@@ -116,11 +116,12 @@ public final class AdvancedDrawingConverter {
             return;
         }
         JsonNode data = sheetPayload.path("data");
-        if (!data.isObject() || data.size() == 0) {
+        if (!(data instanceof ObjectNode) || data.size() == 0) {
             return;
         }
+        ObjectNode dataObj = (ObjectNode) data;
         XSSFDrawing drawing = sheet.createDrawingPatriarch();
-        for (JsonNode item : orderedItems(data, sheetPayload.path("order"))) {
+        for (JsonNode item : orderedItems(dataObj, sheetPayload.path("order"))) {
             if (item == null || !item.isObject()) {
                 continue;
             }
@@ -221,15 +222,17 @@ public final class AdvancedDrawingConverter {
             item.put("subUnitId", subUnitId);
             item.put("shapeId", shapeId);
             item.put("kind", shape instanceof XSSFConnector ? "connector" : "shape");
-            int shapeType = shape instanceof XSSFConnector
-                    ? ((XSSFConnector) shape).getShapeType()
-                    : ((XSSFSimpleShape) shape).getShapeType();
-            item.put("shapeType", shapeTypeNameOf(shapeType));
+            // shapeType 只对 XSSFSimpleShape / XSSFConnector 有定义，XSSFShape 基类没有该方法；
+            // 按具体子类分支调用，避免 POI 5.2.5 上 XSSFShape#getShapeType() 不存在导致编译失败。
+            // getShapeType() lives on XSSFSimpleShape / XSSFConnector but not on XSSFShape in POI 5.2.5.
             if (shape instanceof XSSFSimpleShape) {
+                item.put("shapeType", shapeTypeNameOf(((XSSFSimpleShape) shape).getShapeType()));
                 String text = ((XSSFSimpleShape) shape).getText();
                 if (text != null && !text.isEmpty()) {
                     item.put("text", text);
                 }
+            } else if (shape instanceof XSSFConnector) {
+                item.put("shapeType", shapeTypeNameOf(((XSSFConnector) shape).getShapeType()));
             }
             XSSFAnchor anchor = shape.getAnchor();
             if (anchor instanceof XSSFClientAnchor) {
@@ -252,11 +255,12 @@ public final class AdvancedDrawingConverter {
             return;
         }
         JsonNode data = sheetPayload.path("data");
-        if (!data.isObject() || data.size() == 0) {
+        if (!(data instanceof ObjectNode) || data.size() == 0) {
             return;
         }
+        ObjectNode dataObj = (ObjectNode) data;
         XSSFDrawing drawing = sheet.createDrawingPatriarch();
-        List<JsonNode> items = orderedItems(data, sheetPayload.path("order"));
+        List<JsonNode> items = orderedItems(dataObj, sheetPayload.path("order"));
         Map<String, XSSFSimpleShape> simpleShapes = new LinkedHashMap<>();
         for (JsonNode item : items) {
             if (item == null || !item.isObject()) {
@@ -308,7 +312,7 @@ public final class AdvancedDrawingConverter {
     // Helpers
     // ============================================================
 
-    private static List<JsonNode> orderedItems(JsonNode data, JsonNode orderNode) {
+    private static List<JsonNode> orderedItems(ObjectNode data, JsonNode orderNode) {
         List<JsonNode> result = new ArrayList<>();
         if (orderNode != null && orderNode.isArray() && orderNode.size() > 0) {
             for (JsonNode id : orderNode) {
