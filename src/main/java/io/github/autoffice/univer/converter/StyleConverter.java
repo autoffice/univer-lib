@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2026 AutOffice (hello.aldis@qq.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.autoffice.univer.converter;
 
 import io.github.autoffice.univer.model.BooleanNumber;
@@ -20,6 +35,11 @@ import org.apache.poi.xssf.usermodel.XSSFCellStyle;
 import org.apache.poi.xssf.usermodel.XSSFColor;
 import org.apache.poi.xssf.usermodel.XSSFFont;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTBorder;
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTBorderPr;
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTColor;
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.CTXf;
+import org.openxmlformats.schemas.spreadsheetml.x2006.main.STBorderStyle;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -231,9 +251,14 @@ public final class StyleConverter {
         if (edge == null || edge.getS() == null) {
             return;
         }
-        int idx = edge.getS();
-        BorderStyle[] values = BorderStyle.values();
-        BorderStyle bs = (idx >= 0 && idx < values.length) ? values[idx] : BorderStyle.NONE;
+        // Univer BorderStyleTypes 到 POI BorderStyle 的映射
+        // Univer: NONE=0, THIN=1, HAIR=2, DOTTED=3, DASHED=4, DASH_DOT=5, DASH_DOT_DOT=6,
+        //         DOUBLE=7, MEDIUM=8, MEDIUM_DASHED=9, MEDIUM_DASH_DOT=10, MEDIUM_DASH_DOT_DOT=11,
+        //         SLANT_DASH_DOT=12, THICK=13
+        // POI:    NONE=0, THIN=1, MEDIUM=2, DASHED=3, DOTTED=4, THICK=5, DOUBLE=6, HAIR=7,
+        //         MEDIUM_DASHED=8, DASH_DOT=9, MEDIUM_DASH_DOT=10, DASH_DOT_DOT=11,
+        //         MEDIUM_DASH_DOT_DOT=12, SLANTED_DASH_DOT=13
+        BorderStyle bs = univerBorderStyleToPoi(edge.getS());
         XSSFColor color = null;
         if (edge.getCl() != null && edge.getCl().getRgb() != null) {
             byte[] argb = ColorUtils.rgbHexToArgb(edge.getCl().getRgb());
@@ -366,6 +391,8 @@ public final class StyleConverter {
     }
 
     private void readBackground(XSSFCellStyle cs, IStyleData out) {
+        // Univer 仅支持 SOLID_FOREGROUND 纯色填充；其他 PatternType（DOTS/BRICKS/SQUARES 等）
+        // 在 IStyleData 中没有对应字段，丢弃。详见 docs/KNOWN_ISSUES.md。
         if (cs.getFillPattern() != FillPatternType.SOLID_FOREGROUND) {
             return;
         }
@@ -381,6 +408,11 @@ public final class StyleConverter {
         IBorderStyleData l = readEdge(cs.getBorderLeft(), cs.getLeftBorderXSSFColor());
         IBorderStyleData r = readEdge(cs.getBorderRight(), cs.getRightBorderXSSFColor());
         if (t == null && b == null && l == null && r == null) {
+            // POI 在 applyBorder 未显式设置时返回 NONE，但 OOXML 规范默认应用边框。
+            // 回退到直接读取 CTBorder。
+            // POI returns NONE when applyBorder is not explicitly set, but OOXML spec
+            // defaults to applying the border. Fall back to reading CTBorder directly.
+            readBordersFromCt(cs, out);
             return;
         }
         IBorderData bd = new IBorderData();
@@ -391,11 +423,99 @@ public final class StyleConverter {
         out.setBd(bd);
     }
 
+    private void readBordersFromCt(XSSFCellStyle cs, IStyleData out) {
+        CTXf ctXf = cs.getCoreXf();
+        if (ctXf == null || !ctXf.isSetBorderId()) {
+            return;
+        }
+        long borderId = ctXf.getBorderId();
+        if (borderId == 0) {
+            return;
+        }
+        CTBorder ctBorder = wb.getStylesSource().getCTStylesheet()
+            .getBorders().getBorderArray((int) borderId);
+        if (ctBorder == null) {
+            return;
+        }
+        IBorderStyleData t = readCtEdge(ctBorder.getTop());
+        IBorderStyleData b = readCtEdge(ctBorder.getBottom());
+        IBorderStyleData l = readCtEdge(ctBorder.getLeft());
+        IBorderStyleData r = readCtEdge(ctBorder.getRight());
+        if (t == null && b == null && l == null && r == null) {
+            return;
+        }
+        IBorderData bd = new IBorderData();
+        if (t != null) bd.setT(t);
+        if (b != null) bd.setB(b);
+        if (l != null) bd.setL(l);
+        if (r != null) bd.setR(r);
+        out.setBd(bd);
+    }
+
+    private IBorderStyleData readCtEdge(CTBorderPr borderPr) {
+        if (borderPr == null || !borderPr.isSetStyle()) {
+            return null;
+        }
+        STBorderStyle.Enum style = borderPr.getStyle();
+        if (style == null || style == STBorderStyle.NONE) {
+            return null;
+        }
+        BorderStyle bs = ctBorderStyleToPoi(style);
+        if (bs == null || bs == BorderStyle.NONE) {
+            return null;
+        }
+        IBorderStyleData e = new IBorderStyleData().setS(poiBorderStyleToUniver(bs));
+        CTColor ctColor = borderPr.getColor();
+        if (ctColor != null) {
+            String rgb = ctColorToHex(ctColor);
+            if (rgb != null) {
+                e.setCl(new IColorStyle().setRgb(rgb));
+            }
+        }
+        return e;
+    }
+
+    private static BorderStyle ctBorderStyleToPoi(STBorderStyle.Enum st) {
+        if (st == null) return BorderStyle.NONE;
+        int v = st.intValue();
+        switch (v) {
+            case STBorderStyle.INT_NONE: return BorderStyle.NONE;
+            case STBorderStyle.INT_THIN: return BorderStyle.THIN;
+            case STBorderStyle.INT_MEDIUM: return BorderStyle.MEDIUM;
+            case STBorderStyle.INT_DASHED: return BorderStyle.DASHED;
+            case STBorderStyle.INT_DOTTED: return BorderStyle.DOTTED;
+            case STBorderStyle.INT_THICK: return BorderStyle.THICK;
+            case STBorderStyle.INT_DOUBLE: return BorderStyle.DOUBLE;
+            case STBorderStyle.INT_HAIR: return BorderStyle.HAIR;
+            case STBorderStyle.INT_MEDIUM_DASHED: return BorderStyle.MEDIUM_DASHED;
+            case STBorderStyle.INT_DASH_DOT: return BorderStyle.DASH_DOT;
+            case STBorderStyle.INT_MEDIUM_DASH_DOT: return BorderStyle.MEDIUM_DASH_DOT;
+            case STBorderStyle.INT_DASH_DOT_DOT: return BorderStyle.DASH_DOT_DOT;
+            case STBorderStyle.INT_MEDIUM_DASH_DOT_DOT: return BorderStyle.MEDIUM_DASH_DOT_DOT;
+            case STBorderStyle.INT_SLANT_DASH_DOT: return BorderStyle.SLANTED_DASH_DOT;
+            default: return BorderStyle.NONE;
+        }
+    }
+
+    private static String ctColorToHex(CTColor ctColor) {
+        if (ctColor == null) {
+            return null;
+        }
+        byte[] rgb = ctColor.getRgb();
+        if (rgb == null || rgb.length < 3) {
+            return null;
+        }
+        if (rgb.length == 4) {
+            return ColorUtils.argbToRgbHex(rgb);
+        }
+        return String.format("#%02x%02x%02x", rgb[0] & 0xFF, rgb[1] & 0xFF, rgb[2] & 0xFF);
+    }
+
     private IBorderStyleData readEdge(BorderStyle bs, XSSFColor color) {
         if (bs == null || bs == BorderStyle.NONE) {
             return null;
         }
-        IBorderStyleData e = new IBorderStyleData().setS(bs.ordinal());
+        IBorderStyleData e = new IBorderStyleData().setS(poiBorderStyleToUniver(bs));
         String rgb = xssfColorToHex(color);
         if (rgb != null) {
             e.setCl(new IColorStyle().setRgb(rgb));
@@ -412,16 +532,50 @@ public final class StyleConverter {
         } else if (h == HorizontalAlignment.RIGHT) {
             out.setHt(3);
         }
+
         VerticalAlignment v = cs.getVerticalAlignment();
         if (v == VerticalAlignment.TOP) {
             out.setVt(1);
         } else if (v == VerticalAlignment.CENTER) {
             out.setVt(2);
         } else if (v == VerticalAlignment.BOTTOM) {
-            // BOTTOM 是 POI 默认值，若用户未显式设置则通常不希望出现在输出中；
-            // 但为保证往返一致性，这里保留显式映射。
-            // BOTTOM is POI's default; keep explicit mapping for round-trip fidelity.
             out.setVt(3);
+        }
+
+        // POI 在 applyAlignment 未显式设置时返回默认值（GENERAL / BOTTOM），
+        // 但 OOXML 规范默认应用 alignment。从 CT 兜底读取。
+        if (h == HorizontalAlignment.GENERAL || v == VerticalAlignment.BOTTOM) {
+            readAlignmentFromCt(cs, out, h, v);
+        }
+    }
+
+    private void readAlignmentFromCt(XSSFCellStyle cs, IStyleData out,
+                                     HorizontalAlignment poiH, VerticalAlignment poiV) {
+        CTXf ctXf = cs.getCoreXf();
+        if (ctXf == null || !ctXf.isSetAlignment()) {
+            return;
+        }
+        org.openxmlformats.schemas.spreadsheetml.x2006.main.CTCellAlignment ctAlign = ctXf.getAlignment();
+        if (poiH == HorizontalAlignment.GENERAL && ctAlign.isSetHorizontal()) {
+            org.openxmlformats.schemas.spreadsheetml.x2006.main.STHorizontalAlignment.Enum ha =
+                ctAlign.getHorizontal();
+            if (ha == org.openxmlformats.schemas.spreadsheetml.x2006.main.STHorizontalAlignment.LEFT) {
+                out.setHt(1);
+            } else if (ha == org.openxmlformats.schemas.spreadsheetml.x2006.main.STHorizontalAlignment.CENTER) {
+                out.setHt(2);
+            } else if (ha == org.openxmlformats.schemas.spreadsheetml.x2006.main.STHorizontalAlignment.RIGHT) {
+                out.setHt(3);
+            }
+        }
+        if (poiV == VerticalAlignment.BOTTOM && ctAlign.isSetVertical()) {
+            org.openxmlformats.schemas.spreadsheetml.x2006.main.STVerticalAlignment.Enum va =
+                ctAlign.getVertical();
+            if (va == org.openxmlformats.schemas.spreadsheetml.x2006.main.STVerticalAlignment.TOP) {
+                out.setVt(1);
+            } else if (va == org.openxmlformats.schemas.spreadsheetml.x2006.main.STVerticalAlignment.CENTER) {
+                out.setVt(2);
+            }
+            // BOTTOM 已经是默认值，不需要覆盖
         }
     }
 
@@ -449,6 +603,71 @@ public final class StyleConverter {
             return;
         }
         out.setN(new INumfmtLocal().setPattern(p));
+    }
+
+    // ============================================================
+    // 边框样式映射 / Border style mapping
+    // ============================================================
+
+    /**
+     * Univer BorderStyleTypes 到 POI BorderStyle 的映射。
+     * Map Univer BorderStyleTypes to POI BorderStyle.
+     */
+    private static BorderStyle univerBorderStyleToPoi(int univerStyle) {
+        // Univer: NONE=0, THIN=1, HAIR=2, DOTTED=3, DASHED=4, DASH_DOT=5, DASH_DOT_DOT=6,
+        //         DOUBLE=7, MEDIUM=8, MEDIUM_DASHED=9, MEDIUM_DASH_DOT=10, MEDIUM_DASH_DOT_DOT=11,
+        //         SLANT_DASH_DOT=12, THICK=13
+        // POI:    NONE=0, THIN=1, MEDIUM=2, DASHED=3, DOTTED=4, THICK=5, DOUBLE=6, HAIR=7,
+        //         MEDIUM_DASHED=8, DASH_DOT=9, MEDIUM_DASH_DOT=10, DASH_DOT_DOT=11,
+        //         MEDIUM_DASH_DOT_DOT=12, SLANTED_DASH_DOT=13
+        switch (univerStyle) {
+            case 0: return BorderStyle.NONE;
+            case 1: return BorderStyle.THIN;
+            case 2: return BorderStyle.HAIR;
+            case 3: return BorderStyle.DOTTED;
+            case 4: return BorderStyle.DASHED;
+            case 5: return BorderStyle.DASH_DOT;
+            case 6: return BorderStyle.DASH_DOT_DOT;
+            case 7: return BorderStyle.DOUBLE;
+            case 8: return BorderStyle.MEDIUM;
+            case 9: return BorderStyle.MEDIUM_DASHED;
+            case 10: return BorderStyle.MEDIUM_DASH_DOT;
+            case 11: return BorderStyle.MEDIUM_DASH_DOT_DOT;
+            case 12: return BorderStyle.SLANTED_DASH_DOT;
+            case 13: return BorderStyle.THICK;
+            default: return BorderStyle.NONE;
+        }
+    }
+
+    /**
+     * POI BorderStyle 到 Univer BorderStyleTypes 的映射。
+     * Map POI BorderStyle to Univer BorderStyleTypes.
+     */
+    private static int poiBorderStyleToUniver(BorderStyle poiStyle) {
+        if (poiStyle == null) return 0;
+        // POI:    NONE=0, THIN=1, MEDIUM=2, DASHED=3, DOTTED=4, THICK=5, DOUBLE=6, HAIR=7,
+        //         MEDIUM_DASHED=8, DASH_DOT=9, MEDIUM_DASH_DOT=10, DASH_DOT_DOT=11,
+        //         MEDIUM_DASH_DOT_DOT=12, SLANTED_DASH_DOT=13
+        // Univer: NONE=0, THIN=1, HAIR=2, DOTTED=3, DASHED=4, DASH_DOT=5, DASH_DOT_DOT=6,
+        //         DOUBLE=7, MEDIUM=8, MEDIUM_DASHED=9, MEDIUM_DASH_DOT=10, MEDIUM_DASH_DOT_DOT=11,
+        //         SLANT_DASH_DOT=12, THICK=13
+        switch (poiStyle) {
+            case NONE: return 0;
+            case THIN: return 1;
+            case MEDIUM: return 8;
+            case DASHED: return 4;
+            case DOTTED: return 3;
+            case THICK: return 13;
+            case DOUBLE: return 7;
+            case HAIR: return 2;
+            case MEDIUM_DASHED: return 9;
+            case DASH_DOT: return 5;
+            case MEDIUM_DASH_DOT: return 10;
+            case DASH_DOT_DOT: return 6;
+            case MEDIUM_DASH_DOT_DOT: return 11;
+            case SLANTED_DASH_DOT: return 12;
+            default: return 0;
+        }
     }
 
     // ============================================================

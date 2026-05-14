@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2026 AutOffice (hello.aldis@qq.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.autoffice.univer.converter;
 
 import io.github.autoffice.univer.model.*;
@@ -109,5 +124,37 @@ class StyleConverterTest {
             assertThat(back.getUl().getS()).isEqualTo(BooleanNumber.TRUE);
             assertThat(back.getSt().getS()).isEqualTo(BooleanNumber.TRUE);
         } catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    /**
+     * 回归：当 cellXf 在 XML 中未显式声明 applyBorder 属性时，POI 高层 API 会把
+     * borderTop/Left/Right/Bottom 全部返回 NONE，导致边框丢失（test2.xlsx 中
+     * "丰富的单元格表现" sheet 的 E3 dotted red 边框就是这种情况）。修复后应该
+     * 从 CTBorder 兜底读取，让边框正确进入 IStyleData。
+     */
+    @Test
+    void should_read_border_when_apply_border_flag_is_unset() throws Exception {
+        try (java.io.FileInputStream fis = new java.io.FileInputStream("src/test/resources/test2.xlsx");
+             XSSFWorkbook wb = new XSSFWorkbook(fis)) {
+            XSSFSheet sheet = wb.getSheet("丰富的单元格表现");
+            assertThat(sheet).as("fixture 必须包含目标 sheet").isNotNull();
+            XSSFCell e3 = sheet.getRow(2).getCell(4);
+            assertThat(e3).as("E3 应存在").isNotNull();
+            XSSFCellStyle cs = e3.getCellStyle();
+
+            // 触发 POI 的 bug：高层 API 因 applyBorder 未显式设置而返回 NONE
+            assertThat(cs.getBorderTop()).isEqualTo(org.apache.poi.ss.usermodel.BorderStyle.NONE);
+
+            // 但 StyleConverter 应该兜底读到 dotted red 边框（Univer s=3, color #ff0000）
+            StyleConverter sc = new StyleConverter(wb);
+            IStyleData out = sc.fromPoiStyle(cs);
+            assertThat(out.getBd()).as("应通过 CTBorder 兜底读到边框").isNotNull();
+            assertThat(out.getBd().getT()).isNotNull();
+            assertThat(out.getBd().getT().getS()).as("DOTTED").isEqualTo(3);
+            assertThat(out.getBd().getT().getCl().getRgb().toLowerCase()).isEqualTo("#ff0000");
+            assertThat(out.getBd().getB().getS()).isEqualTo(3);
+            assertThat(out.getBd().getL().getS()).isEqualTo(3);
+            assertThat(out.getBd().getR().getS()).isEqualTo(3);
+        }
     }
 }
