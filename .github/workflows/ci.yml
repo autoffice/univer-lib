@@ -1,0 +1,88 @@
+name: CI
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Test JDK ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        java: [ 8, 11, 17, 21 ]
+        distribution: [ 'temurin' ]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: ${{ matrix.distribution }}
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Make mvnw executable
+        run: chmod +x mvnw
+
+      - name: Run tests (JDK 8)
+        if: matrix.java == '8'
+        run: ./mvnw -B -ntp test
+
+      - name: Run tests (JDK 11+)
+        if: matrix.java != '8'
+        run: >
+          ./mvnw -B -ntp test
+          -DargLine="--add-opens=java.base/java.lang=ALL-UNNAMED
+                     --add-opens=java.base/java.util=ALL-UNNAMED
+                     --add-opens=java.base/sun.reflect.annotation=ALL-UNNAMED"
+
+      - name: Coverage report
+        if: matrix.java == '8'
+        run: ./mvnw -B -ntp -Pcoverage verify
+
+      - name: Upload coverage to Codecov
+        if: matrix.java == '8'
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: autoffice/univer-lib
+          files: target/site/jacoco/jacoco.xml
+          fail_ci_if_error: false
+
+      - name: Build & install
+        if: matrix.java == '8'
+        run: ./mvnw -B -ntp -DskipTests install
+
+  lint:
+    name: Lint (p3c-pmd)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 8
+          distribution: temurin
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+      - run: chmod +x mvnw
+      - name: p3c-pmd check
+        run: ./mvnw -B -ntp -DskipTests -Plint verify

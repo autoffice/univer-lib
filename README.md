@@ -1,5 +1,11 @@
 # univer-lib
 
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.autoffice/univer-lib.svg?label=Maven%20Central)](https://central.sonatype.com/artifact/io.github.autoffice/univer-lib)
+[![CI](https://github.com/autoffice/univer-lib/actions/workflows/ci.yml/badge.svg)](https://github.com/autoffice/univer-lib/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/autoffice/univer-lib/branch/main/graph/badge.svg)](https://codecov.io/gh/autoffice/univer-lib)
+[![JDK](https://img.shields.io/badge/JDK-8%2B-orange.svg)](https://adoptium.net/)
+
 Java library for converting between Excel xlsx files and Univer Sheets `IWorkbookData` JSON snapshots.
 
 Univer xlsx 与 `IWorkbookData` 双向高保真转换的 Java 库。
@@ -22,7 +28,7 @@ Univer xlsx 与 `IWorkbookData` 双向高保真转换的 Java 库。
 <dependency>
   <groupId>io.github.autoffice</groupId>
   <artifactId>univer-lib</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
 </dependency>
 ```
 

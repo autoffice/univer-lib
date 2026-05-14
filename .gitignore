@@ -8,3 +8,6 @@ example/backend/target/
 example/frontend/node_modules/
 example/frontend/dist/
 superpowers
+
+# flatten-maven-plugin output (generated each build, do not commit)
+.flattened-pom.xml

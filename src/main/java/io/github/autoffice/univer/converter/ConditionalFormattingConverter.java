@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2026 AutOffice (hello.aldis@qq.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.autoffice.univer.converter;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -65,7 +80,7 @@ public final class ConditionalFormattingConverter {
      *
      * @return 规则数组；若 sheet 无条件格式则返回空数组，永不返回 null。
      */
-    public static ArrayNode readSheetCF(XSSFSheet sheet, ObjectMapper mapper) {
+    public static ArrayNode readSheetCf(XSSFSheet sheet, ObjectMapper mapper) {
         ArrayNode out = mapper.createArrayNode();
         if (sheet == null) {
             return out;
@@ -416,7 +431,7 @@ public final class ConditionalFormattingConverter {
      * 将 Univer 规则数组写入 sheet 的条件格式。
      * Apply a Univer rule JSON array to the sheet as conditional formatting.
      */
-    public static void writeSheetCF(XSSFSheet sheet, JsonNode rulesArray) {
+    public static void writeSheetCf(XSSFSheet sheet, JsonNode rulesArray) {
         if (sheet == null || rulesArray == null || !rulesArray.isArray() || rulesArray.size() == 0) {
             return;
         }

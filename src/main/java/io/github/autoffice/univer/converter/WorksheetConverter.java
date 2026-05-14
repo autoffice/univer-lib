@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2026 AutOffice (hello.aldis@qq.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.autoffice.univer.converter;
 
 import io.github.autoffice.univer.UniverXlsxOptions;
@@ -169,10 +184,17 @@ public final class WorksheetConverter {
 
                 if (cellData.getP() != null) {
                     // 富文本 / rich text
-                    XSSFRichTextString rts = rich.toPoi(cellData.getP());
-                    cell.setCellValue(rts);
-                    applyStyleOnly(cell, cellData);
-                    applyHyperlinkFromDoc(cell, cellData.getP());
+                    // 特殊情况：p 只是为了承载 cell-level hyperlink 的占位（dataStream="\r\n"，无文本），
+                    // 不应强行把 cell 类型从 BLANK 升级成 STRING。仅应用样式与 hyperlink。
+                    if (isHyperlinkOnlyDoc(cellData.getP())) {
+                        applyStyleOnly(cell, cellData);
+                        applyHyperlinkFromDoc(cell, cellData.getP());
+                    } else {
+                        XSSFRichTextString rts = rich.toPoi(cellData.getP());
+                        cell.setCellValue(rts);
+                        applyStyleOnly(cell, cellData);
+                        applyHyperlinkFromDoc(cell, cellData.getP());
+                    }
                 } else if (cellData.getF() != null && cellData.getSi() != null) {
                     // 共享公式 / shared formula — 登记到 registry，由其 apply 时统一写入
                     formulas.registerWrite(sheetIndex, rowIdx, colIdx, cellData.getSi(), cellData.getF());
@@ -192,6 +214,19 @@ public final class WorksheetConverter {
             cell.setCellStyle(styles.toPoiStyle((io.github.autoffice.univer.model.IStyleData) styleObj));
         }
         // 字符串 id 由 WorkbookConverter 层负责解析 / string style id resolved by higher layer
+    }
+
+    /**
+     * 判断 IDocumentData 是否仅为 hyperlink 占位（没有真实文本）。
+     * 读路径在 BLANK cell 上遇到 cell-level hyperlink 时，会构造一个 dataStream 仅为段落终止符 "\r\n" 的
+     * IDocumentData 来承载 customRanges。写回时应保持 BLANK，不应强行写 STRING。
+     */
+    private static boolean isHyperlinkOnlyDoc(IDocumentData doc) {
+        if (doc == null || doc.getBody() == null) {
+            return false;
+        }
+        String s = doc.getBody().getDataStream();
+        return s == null || s.isEmpty() || "\r\n".equals(s);
     }
 
     /** 写行数据 / write row data. */

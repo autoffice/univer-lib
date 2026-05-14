@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2026 AutOffice (hello.aldis@qq.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.autoffice.univer.converter;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -139,7 +154,7 @@ public final class WorkbookConverter {
             for (Map.Entry<String, JsonNode> e : cfBySheetId.entrySet()) {
                 XSSFSheet sh = sheetIdToXssf.get(e.getKey());
                 if (sh != null) {
-                    ConditionalFormattingConverter.writeSheetCF(sh, e.getValue());
+                    ConditionalFormattingConverter.writeSheetCf(sh, e.getValue());
                 }
             }
         }
@@ -308,7 +323,7 @@ public final class WorkbookConverter {
             order.add(sid);
 
             // 收集条件格式
-            ArrayNode cfRules = ConditionalFormattingConverter.readSheetCF(sheet, mapper);
+            ArrayNode cfRules = ConditionalFormattingConverter.readSheetCf(sheet, mapper);
             if (cfRules.size() > 0) {
                 cfBySheetId.set(sid, cfRules);
             }

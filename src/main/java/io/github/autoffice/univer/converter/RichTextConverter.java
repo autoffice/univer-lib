@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2026 AutOffice (hello.aldis@qq.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.autoffice.univer.converter;
 
 import io.github.autoffice.univer.model.BooleanNumber;
@@ -60,9 +75,12 @@ public final class RichTextConverter {
         if (dataStream == null || dataStream.isEmpty()) {
             return new XSSFRichTextString("");
         }
-        // 去掉 Univer 段落终止符 "\r\n"，把内部保留的 "\r\n" 合并成 "\n"
+        // Univer dataStream 末尾必有一个段落终止符 "\r\n"（fromPoi 末段也会追加），
+        // 还原成 xlsx 字符串时只需剥掉这一个；保留用户在段中输入的 "\n" 换行。
+        // 历史 bug：之前用 `while (endsWith("\n"))` 把所有尾部换行都剥掉，
+        // 导致 "查看示例 >>\n" round-trip 后丢失末尾换行。
         String plain = dataStream.replace("\r\n", "\n");
-        while (plain.endsWith("\n")) {
+        if (plain.endsWith("\n")) {
             plain = plain.substring(0, plain.length() - 1);
         }
         XSSFRichTextString rts = new XSSFRichTextString(plain);

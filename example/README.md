@@ -21,7 +21,7 @@ cd /path/to/univer-lib
 ./mvnw -q install -DskipTests
 ```
 
-这会把 `io.github.autoffice:univer-lib:0.1.0-SNAPSHOT` 装进 `~/.m2/repository`，供 example/backend 引用。
+这会把 `io.github.autoffice:univer-lib:1.0.0` 装进 `~/.m2/repository`，供 example/backend 引用。
 
 ### 2. 启动后端
 

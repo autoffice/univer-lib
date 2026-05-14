@@ -1,0 +1,47 @@
+name: Publish to Maven Central
+
+permissions:
+  contents: read
+
+on:
+  release:
+    types: [ created ]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: 8
+          distribution: temurin
+          server-id: ossrh
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+
+      - name: Cache local Maven repository
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Import GPG private key
+        run: |
+          echo -e "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
+
+      - name: Make mvnw executable
+        run: chmod +x mvnw
+
+      - name: Deploy to Maven Central
+        env:
+          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
+        run: >
+          ./mvnw --batch-mode -ntp -Prelease deploy
+          -DskipTests
+          -Dgpg.passphrase=${{ secrets.GPG_PASSPHRASE }}

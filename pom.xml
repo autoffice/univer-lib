@@ -6,19 +6,75 @@
 
     <groupId>io.github.autoffice</groupId>
     <artifactId>univer-lib</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>${revision}</version>
     <packaging>jar</packaging>
+    <name>univer-lib</name>
+    <description>Java library for high-fidelity bidirectional conversion between xlsx files and Univer Sheets IWorkbookData JSON snapshots. Univer Sheets 的 Java 工具库，支持 xlsx 与 IWorkbookData 的无损互转。</description>
+    <url>https://github.com/autoffice/univer-lib</url>
+    <inceptionYear>2026</inceptionYear>
 
     <properties>
+        <revision>1.0.0</revision>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <gpg.skip>true</gpg.skip>
+        <maven.javadoc.skip>false</maven.javadoc.skip>
+
+        <!-- dependency versions -->
         <poi.version>5.2.5</poi.version>
         <jackson.version>2.17.2</jackson.version>
-        <lombok.version>1.18.32</lombok.version>
-        <junit.version>5.10.2</junit.version>
+        <lombok.version>1.18.34</lombok.version>
+        <junit.version>5.10.3</junit.version>
         <assertj.version>3.25.3</assertj.version>
+
+        <!-- plugin versions -->
+        <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.3.0</maven-surefire-plugin.version>
+        <maven-source-plugin.version>3.3.1</maven-source-plugin.version>
+        <maven-javadoc-plugin.version>3.10.1</maven-javadoc-plugin.version>
+        <maven-gpg-plugin.version>3.2.7</maven-gpg-plugin.version>
+        <maven-pmd-plugin.version>3.21.2</maven-pmd-plugin.version>
+        <flatten-maven-plugin.version>1.6.0</flatten-maven-plugin.version>
+        <central-publishing-maven-plugin.version>0.8.0</central-publishing-maven-plugin.version>
+        <license-maven-plugin.version>4.6</license-maven-plugin.version>
+        <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
+        <p3c-pmd.version>2.1.1</p3c-pmd.version>
     </properties>
+
+    <scm>
+        <url>https://github.com/autoffice/univer-lib</url>
+        <connection>scm:git:https://git@github.com/autoffice/univer-lib.git</connection>
+        <developerConnection>scm:git:https://git@github.com/autoffice/univer-lib.git</developerConnection>
+    </scm>
+
+    <organization>
+        <name>AutOffice</name>
+        <url>https://github.com/autoffice</url>
+    </organization>
+
+    <developers>
+        <developer>
+            <id>HelloAldis</id>
+            <name>HelloAldis</name>
+            <email>hello.aldis@qq.com</email>
+        </developer>
+    </developers>
+
+    <licenses>
+        <license>
+            <name>Apache-2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+            <comments>A business-friendly OSS license</comments>
+        </license>
+    </licenses>
+
+    <issueManagement>
+        <system>GitHub Issues</system>
+        <url>https://github.com/autoffice/univer-lib/issues</url>
+    </issueManagement>
 
     <dependencies>
         <dependency>
@@ -60,15 +116,61 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+                <configuration>
+                    <source>${maven.compiler.source}</source>
+                    <target>${maven.compiler.target}</target>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
+                <version>${maven-surefire-plugin.version}</version>
+                <configuration>
+                    <testFailureIgnore>false</testFailureIgnore>
+                </configuration>
+            </plugin>
+            <!--
+                flatten-maven-plugin: 把 ${revision} 占位符解析为真实版本号后再 install/deploy，
+                保证下游 (example/backend、Maven Central) 拿到的 pom 不含未解析变量。
+                flatten-maven-plugin: resolve ${revision} to a concrete version before install/deploy,
+                so downstream consumers see a real version, not an unresolved placeholder.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>flatten-maven-plugin</artifactId>
+                <version>${flatten-maven-plugin.version}</version>
+                <configuration>
+                    <updatePomFile>true</updatePomFile>
+                    <flattenMode>oss</flattenMode>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flatten</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>flatten</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>flatten.clean</id>
+                        <phase>clean</phase>
+                        <goals>
+                            <goal>clean</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
 
     <profiles>
-        <!-- 覆盖率 profile：./mvnw -Pcoverage verify 生成 JaCoCo 报告 -->
-        <!-- Coverage profile: ./mvnw -Pcoverage verify produces JaCoCo report -->
+        <!--
+            coverage profile：./mvnw -Pcoverage verify 生成 JaCoCo 报告（target/site/jacoco/index.html）。
+            coverage profile: ./mvnw -Pcoverage verify produces the JaCoCo report at target/site/jacoco/index.html.
+        -->
         <profile>
             <id>coverage</id>
             <build>
@@ -76,7 +178,7 @@
                     <plugin>
                         <groupId>org.jacoco</groupId>
                         <artifactId>jacoco-maven-plugin</artifactId>
-                        <version>0.8.12</version>
+                        <version>${jacoco-maven-plugin.version}</version>
                         <executions>
                             <execution>
                                 <goals>
@@ -113,17 +215,18 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-pmd-plugin</artifactId>
-                        <version>3.21.2</version>
+                        <version>${maven-pmd-plugin.version}</version>
                         <configuration>
                             <rulesets>
                                 <ruleset>rulesets/java/ali-naming.xml</ruleset>
                             </rulesets>
+                            <printFailingErrors>true</printFailingErrors>
                         </configuration>
                         <dependencies>
                             <dependency>
                                 <groupId>com.alibaba.p3c</groupId>
                                 <artifactId>p3c-pmd</artifactId>
-                                <version>2.1.1</version>
+                                <version>${p3c-pmd.version}</version>
                             </dependency>
                         </dependencies>
                         <executions>
@@ -134,6 +237,123 @@
                                 </goals>
                             </execution>
                         </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            release profile：发布到 Maven Central 所需的全套插件（sources / javadoc / GPG 签名 / license 头检查 / 发布）。
+            日常构建不需要 GPG key 和 license 校验，因此仅在 release 发布时启用。
+            使用方式：./mvnw -Prelease deploy
+            (GPG 密钥通过环境变量或 ~/.gnupg 提供；将 -Dgpg.skip=false 或 -P 自动覆盖跳过标志。)
+
+            release profile: plugins needed to publish to Maven Central (sources / javadoc / GPG / license header check / publish).
+            Daily builds don't need GPG keys or license checks, so these only run on release.
+            Usage: ./mvnw -Prelease deploy
+            (Provide GPG key via env or ~/.gnupg; set -Dgpg.skip=false to override the default skip flag.)
+        -->
+        <profile>
+            <id>release</id>
+            <properties>
+                <gpg.skip>false</gpg.skip>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${maven-source-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${maven-javadoc-plugin.version}</version>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <source>${maven.compiler.source}</source>
+                            <charset>UTF-8</charset>
+                            <encoding>UTF-8</encoding>
+                            <docencoding>UTF-8</docencoding>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>${maven-gpg-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <gpgArguments>
+                                <argument>--pinentry-mode</argument>
+                                <argument>loopback</argument>
+                            </gpgArguments>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>com.mycila</groupId>
+                        <artifactId>license-maven-plugin</artifactId>
+                        <version>${license-maven-plugin.version}</version>
+                        <configuration>
+                            <licenseSets>
+                                <licenseSet>
+                                    <header>com/mycila/maven/plugin/license/templates/APACHE-2.txt</header>
+                                    <includes>
+                                        <include>src/main/java/**/*.java</include>
+                                        <include>src/test/java/**/*.java</include>
+                                    </includes>
+                                </licenseSet>
+                            </licenseSets>
+                            <properties>
+                                <owner>AutOffice</owner>
+                                <email>hello.aldis@qq.com</email>
+                            </properties>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>${central-publishing-maven-plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>ossrh</publishingServerId>
+                            <autoPublish>true</autoPublish>
+                            <waitMaxTime>3600</waitMaxTime>
+                            <waitUntil>published</waitUntil>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

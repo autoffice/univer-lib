@@ -1,3 +1,18 @@
+/*
+ * Copyright © 2026 AutOffice (hello.aldis@qq.com)
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.autoffice.univer.io;
 
 import io.github.autoffice.univer.UniverXlsx;
@@ -5,6 +20,7 @@ import io.github.autoffice.univer.model.ICellData;
 import io.github.autoffice.univer.model.IStyleData;
 import io.github.autoffice.univer.model.IWorkbookData;
 import io.github.autoffice.univer.model.IWorksheetData;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -15,10 +31,14 @@ import java.util.Map;
 /**
  * 性能测试：大数据量场景下的转换性能。
  * Performance test for large data scenarios.
+ *
+ * <p>默认禁用，需要时手动启用运行。
+ * Disabled by default, enable manually when needed.
  */
 public class PerformanceTest {
 
     @Test
+    @Disabled("性能测试，需要时手动启用 / Performance test, enable manually when needed")
     public void testLargeWorkbook() throws Exception {
         int rows = 10000;
         int cols = 100;

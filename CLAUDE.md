@@ -16,16 +16,54 @@ Java library `io.github.autoffice:univer-lib` for high-fidelity bidirectional co
 
 All Maven commands use the wrapper. Do **not** invoke system `mvn`.
 
+### 测试 / Testing
+
 ```bash
-./mvnw test                              # run all tests
-./mvnw test -Dtest=StyleConverterTest    # run a single test class
-./mvnw test -Dtest=StyleConverterTest#should_roundtrip_font_and_alignment   # single method
-./mvnw -Pcoverage verify                 # JaCoCo report at target/site/jacoco/index.html
-./mvnw -Plint verify                     # Alibaba p3c-pmd checks (requires PMD 6 — pom pins maven-pmd-plugin 3.21.2)
-./mvnw install -DskipTests               # publish to ~/.m2/repository so example/backend can resolve it
+./mvnw test                                                                # 全部单测
+./mvnw test -Dtest=StyleConverterTest                                      # 单个测试类
+./mvnw test -Dtest=StyleConverterTest#should_roundtrip_font_and_alignment  # 单个方法
+./mvnw test -Dtest='ConditionalFormattingConverterTest,StyleConverterTest' # 多个类
+./mvnw -Pcoverage verify                                                   # JaCoCo 报告：target/site/jacoco/index.html
 ```
 
-Example demo (`example/`) is a separate Spring Boot 2.7 + Vue 3 app (JDK 8 兼容), not a Maven submodule:
+### 静态检查 / Lint
+
+```bash
+./mvnw -Plint verify                     # Alibaba p3c-pmd（PMD 6 + maven-pmd-plugin 3.21.2 锁死）
+./mvnw -DskipTests -Plint verify         # 只跑 lint，不跑测试，速度更快
+```
+
+### 构建与本地安装 / Build & local install
+
+```bash
+./mvnw clean                             # 清理 target/ 与 .flattened-pom.xml
+./mvnw -DskipTests package               # 构建 jar（仍会跑 flatten-maven-plugin）
+./mvnw install -DskipTests               # 装到 ~/.m2/repository，让 example/backend 解析依赖
+./mvnw dependency:tree                   # 排查依赖冲突
+```
+
+> 版本号由 `${revision}` 占位符 + `flatten-maven-plugin` 管理。临时改版本不要直接改 `<revision>`，用 `-Drevision=1.2.3` 覆盖。
+
+### 发布 / Release（仅 CI / 维护者）
+
+`release` profile 启用 source jar、javadoc jar、GPG 签名、license 头检查、Sonatype Central 发布。**日常开发不要用**（GPG 不可用会失败）。
+
+```bash
+./mvnw -Prelease -DskipTests verify      # 本地 dry-run：会跑 license:check 和 GPG sign
+./mvnw -Prelease deploy                  # 真正发布到 Maven Central（CI 会做，本地一般不需要）
+```
+
+### License 头管理 / License headers
+
+新文件创建后必须带 Apache-2.0 头，CI 在 `release` profile 里会校验。
+
+```bash
+./mvnw -Prelease com.mycila:license-maven-plugin:4.6:format   # 自动给所有 Java 文件加头
+./mvnw -Prelease com.mycila:license-maven-plugin:4.6:check    # 验证所有文件都有头
+```
+
+### Example demo（独立子项目，非 Maven submodule）
+
 ```bash
 cd example/backend && ../../mvnw spring-boot:run     # JDK 8+ 即可
 cd example/frontend && npm install && npm run dev    # http://localhost:5173

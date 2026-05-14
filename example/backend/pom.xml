@@ -11,7 +11,7 @@
 
   <groupId>io.github.autoffice.example</groupId>
   <artifactId>univer-lib-example-backend</artifactId>
-  <version>0.1.0-SNAPSHOT</version>
+  <version>1.0.0</version>
   <packaging>jar</packaging>
 
   <properties>
@@ -26,7 +26,7 @@
     <dependency>
       <groupId>io.github.autoffice</groupId>
       <artifactId>univer-lib</artifactId>
-      <version>0.1.0-SNAPSHOT</version>
+      <version>1.0.0</version>
     </dependency>
   </dependencies>
 
