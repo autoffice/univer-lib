@@ -58,12 +58,10 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: matrix.java == '8'
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          slug: autoffice/univer-lib
-          files: target/site/jacoco/jacoco.xml
-          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_ORG_TOKEN }}
+          slug: autoffice/luckysheet-lib
 
       - name: Build & install
         if: matrix.java == '8'
