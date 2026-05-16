@@ -600,9 +600,12 @@ public final class ConditionalFormattingConverter {
             name = "";
         }
         try {
-            return IconMultiStateFormatting.IconSet.byName(name);
+            IconMultiStateFormatting.IconSet match = IconMultiStateFormatting.IconSet.byName(name);
+            if (match != null) {
+                return match;
+            }
         } catch (Exception ignored) {
-            // fall through
+            // fall through to count-based fallback
         }
         // fallbacks based on count
         if (count == 4) {

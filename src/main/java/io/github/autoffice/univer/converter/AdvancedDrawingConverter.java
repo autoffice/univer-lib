@@ -104,8 +104,13 @@ public final class AdvancedDrawingConverter {
             item.put("subUnitId", subUnitId);
             item.put("chartId", chartId);
             item.put("rawXml", chart.getCTChartSpace().xmlText());
-            if (chart.getTitleText() != null) {
-                item.put("title", chart.getTitleText().getString());
+            // POI 5.x：chart 没有 title 时 getTitleText 内部仍可能 NPE，包成 try/catch 兜底。
+            try {
+                if (chart.getTitleText() != null) {
+                    item.put("title", chart.getTitleText().getString());
+                }
+            } catch (Exception ignored) {
+                // 没标题：保留 rawXml 已足够无损往返
             }
             XSSFGraphicFrame frame = chart.getGraphicFrame();
             if (frame != null) {

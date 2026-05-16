@@ -49,6 +49,10 @@ public class UniverXlsxWriter {
             poiWb.write(out);
         } catch (IOException e) {
             throw new UniverXlsxWriteException("write xlsx failed: " + e.getMessage(), e);
+        } catch (RuntimeException e) {
+            // POI 在保存 OPC 包时常把 IOException 包成 OpenXML4JRuntimeException 等非受检异常，
+            // 同样需要包装为库的受检异常以保持公共 API 契约。
+            throw new UniverXlsxWriteException("write xlsx failed: " + e.getMessage(), e);
         }
     }
 }
