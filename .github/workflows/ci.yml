@@ -61,7 +61,7 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_ORG_TOKEN }}
-          slug: autoffice/luckysheet-lib
+          slug: autoffice/univer-lib
 
       - name: Build & install
         if: matrix.java == '8'
