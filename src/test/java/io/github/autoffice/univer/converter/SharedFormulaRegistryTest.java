@@ -91,4 +91,28 @@ class SharedFormulaRegistryTest {
             throw new RuntimeException(e);
         }
     }
+
+    @Test
+    void should_return_empty_when_si_not_found() {
+        SharedFormulaRegistry r = new SharedFormulaRegistry();
+        r.registerRead(0, 0, 0, "A1+1");
+        // 查询不存在的 si → 返回 empty
+        assertThat(r.masterFormulaOf("non-existent-si")).isEmpty();
+    }
+
+    @Test
+    void should_skip_empty_entries_on_write() {
+        SharedFormulaRegistry r = new SharedFormulaRegistry();
+        // 手动构造一个空 entries 的场景（通过反射或直接不注册任何 entry）
+        // 实际上 computeIfAbsent 会创建空 list，但不会添加 entry
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            wb.createSheet("s");
+            // 不注册任何 entry，直接 apply
+            r.applyOnWorkbook(wb);
+            // 不应该抛异常，且 sheet 保持空
+            assertThat(wb.getSheetAt(0).getPhysicalNumberOfRows()).isEqualTo(0);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

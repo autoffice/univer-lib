@@ -129,4 +129,91 @@ class FilterConverterBranchTest {
             }
         }
     }
+
+    @Test
+    void should_use_only_ref_field_without_numeric_fallback() throws Exception {
+        // 覆盖 resolveRange L143: ref 有效 → 直接返回，不走 numeric
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet sh = wb.createSheet("S");
+            sh.createRow(0).createCell(0).setCellValue("h");
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("ref", "A1:B2");
+            // 不设 numeric 字段
+            FilterConverter.writeSheetFilter(sh, payload);
+            assertThat(sh.getCTWorksheet().isSetAutoFilter()).isTrue();
+        }
+    }
+
+    @Test
+    void should_use_numeric_when_ref_field_empty_string() throws Exception {
+        // 覆盖 resolveRange L143: ref="" → 落到 numeric 分支
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet sh = wb.createSheet("S");
+            sh.createRow(0).createCell(0).setCellValue("h");
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("ref", ""); // 空串
+            payload.put("startRow", 0);
+            payload.put("endRow", 1);
+            payload.put("startColumn", 0);
+            payload.put("endColumn", 1);
+            FilterConverter.writeSheetFilter(sh, payload);
+            assertThat(sh.getCTWorksheet().isSetAutoFilter()).isTrue();
+        }
+    }
+
+    @Test
+    void should_skip_numeric_when_partial_fields_present() throws Exception {
+        // 覆盖 resolveRange L149-150 of branch: 有 startRow 但没 endRow → return null
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet sh = wb.createSheet("S");
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("startRow", 0);
+            // 故意缺 endRow / startColumn / endColumn
+            FilterConverter.writeSheetFilter(sh, payload);
+            assertThat(sh.getCTWorksheet().isSetAutoFilter()).isFalse();
+        }
+    }
+
+    @Test
+    void should_skip_numeric_when_endColumn_missing() throws Exception {
+        // 覆盖 hasNonNull 链中 endColumn 缺失分支
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet sh = wb.createSheet("S");
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("startRow", 0);
+            payload.put("endRow", 1);
+            payload.put("startColumn", 0);
+            // 缺 endColumn
+            FilterConverter.writeSheetFilter(sh, payload);
+            assertThat(sh.getCTWorksheet().isSetAutoFilter()).isFalse();
+        }
+    }
+
+    @Test
+    void should_skip_numeric_when_startColumn_missing() throws Exception {
+        // 覆盖 hasNonNull 链中 startColumn 缺失分支
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet sh = wb.createSheet("S");
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("startRow", 0);
+            payload.put("endRow", 1);
+            // 缺 startColumn / endColumn
+            FilterConverter.writeSheetFilter(sh, payload);
+            assertThat(sh.getCTWorksheet().isSetAutoFilter()).isFalse();
+        }
+    }
+
+    @Test
+    void should_skip_write_when_rawXml_empty_string() throws Exception {
+        // 覆盖 L125: rawXml 是空串 → 提前 return（不走 parse）
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet sh = wb.createSheet("S");
+            sh.createRow(0).createCell(0).setCellValue("h");
+            ObjectNode payload = mapper.createObjectNode();
+            payload.put("ref", "A1:B2");
+            payload.put("rawXml", ""); // 空串
+            FilterConverter.writeSheetFilter(sh, payload);
+            assertThat(sh.getCTWorksheet().isSetAutoFilter()).isTrue();
+        }
+    }
 }

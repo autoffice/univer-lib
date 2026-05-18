@@ -96,4 +96,27 @@ class CommentConverterBranchTest {
             assertThat(sh.hasComments()).isTrue();
         }
     }
+
+    @Test
+    void should_handle_empty_note_string_in_read() throws Exception {
+        // 覆盖 L88-90：rts 或 note 为空的分支
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+            XSSFSheet sh = wb.createSheet("S");
+            org.apache.poi.ss.usermodel.Drawing<?> drawing = sh.createDrawingPatriarch();
+            org.apache.poi.ss.usermodel.ClientAnchor anchor = wb.getCreationHelper()
+                    .createClientAnchor();
+            anchor.setCol1(0);
+            anchor.setRow1(0);
+            org.apache.poi.ss.usermodel.Comment c = drawing.createCellComment(anchor);
+            // 设置空字符串
+            c.setString(wb.getCreationHelper().createRichTextString(""));
+            c.setRow(0);
+            c.setColumn(0);
+            sh.createRow(0).createCell(0).setCellComment(c);
+
+            ObjectNode out = CommentConverter.readSheetComments(sh, mapper);
+            // 应该能读取，note 为空字符串
+            assertThat(out.path("0").path("0").path("note").asText()).isEmpty();
+        }
+    }
 }
